@@ -1,31 +1,114 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { PlusCircle, Search, Truck, CheckCircle, Wrench, Eye, Edit } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
-import { getSampleCamionesPiedrinera } from "@/lib/sample-data"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Truck, Search, Plus, MoreHorizontal, Edit, Eye, Loader2, CheckCircle, AlertTriangle } from "lucide-react"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet } from "@/lib/api-client"
+import { useToast } from "@/hooks/use-toast"
+
+interface Camion {
+  id: string
+  placa: string
+  marca: string
+  modelo: string
+  capacidadMetrosCubicos: number
+  estado: string
+  proximoMantenimiento: string
+  seguroVigente: boolean
+  revisionTecnicaVigente: boolean
+  documentacionVigente: boolean
+  activo: boolean
+}
 
 export default function CamionesPiedrineraPage() {
-  const camiones = getSampleCamionesPiedrinera()
+  const { toast } = useToast()
+  const [camiones, setCamiones] = useState<Camion[]>([])
+  const [allCamiones, setAllCamiones] = useState<Camion[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searching, setSearching] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null)
 
-  const filteredCamiones = camiones.filter(
-    (camion) =>
-      camion.placa.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      camion.marca.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      camion.modelo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      camion.estado.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  // Cargar datos iniciales desde Django
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        setLoading(true)
+        setError(null)
 
-  const totalCamiones = camiones.length
-  const camionesDisponibles = camiones.filter((c) => c.estado === "Disponible").length
-  const camionesEnRuta = camiones.filter((c) => c.estado === "En Ruta").length
-  const camionesEnMantenimiento = camiones.filter((c) => c.estado === "En Mantenimiento").length
+        const camionesResult = await apiGet<Camion[]>(API_ENDPOINTS.PIEDRINERA.CAMIONES)
+
+        setCamiones(camionesResult)
+        setAllCamiones(camionesResult)
+      } catch (err: any) {
+        console.error('Error en loadInitialData:', err)
+        setError(err.message || 'Error al cargar los datos')
+        toast({
+          title: "Error",
+          description: "No se pudieron cargar los camiones. Por favor, intenta de nuevo.",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadInitialData()
+  }, [toast])
+
+  // Filtrado local con debounce
+  useEffect(() => {
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current)
+    }
+
+    if (!searchTerm.trim()) {
+      setCamiones(allCamiones)
+      setSearching(false)
+      return
+    }
+
+    setSearching(true)
+
+    debounceTimer.current = setTimeout(() => {
+      const term = searchTerm.toLowerCase().trim()
+      const filtered = allCamiones.filter((camion) => {
+        return (
+          camion.placa.toLowerCase().includes(term) ||
+          camion.marca.toLowerCase().includes(term) ||
+          camion.modelo.toLowerCase().includes(term) ||
+          camion.estado.toLowerCase().includes(term)
+        )
+      })
+      setCamiones(filtered)
+      setSearching(false)
+    }, 300)
+
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current)
+      }
+    }
+  }, [searchTerm, allCamiones])
+
+  const totalCamiones = allCamiones.length
+  const camionesDisponibles = allCamiones.filter((c) => c.estado === "Disponible").length
+  const camionesEnRuta = allCamiones.filter((c) => c.estado === "En Ruta").length
+  const camionesEnMantenimiento = allCamiones.filter((c) => c.estado === "En Mantenimiento").length
 
   const getStatusVariant = (status: string) => {
     switch (status) {
@@ -35,128 +118,229 @@ export default function CamionesPiedrineraPage() {
         return "secondary"
       case "En Mantenimiento":
         return "destructive"
+      case "Cargando":
+        return "outline"
+      case "Descargando":
+        return "outline"
+      case "Fuera de Servicio":
+        return "destructive"
       default:
         return "outline"
     }
   }
 
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Camiones</h1>
+            <p className="text-muted-foreground">Gestión de la flota de camiones</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Camiones</h1>
+            <p className="text-muted-foreground">Gestión de la flota de camiones</p>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="text-center py-8">
+            <Truck className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Error al cargar datos</h3>
+            <p className="text-muted-foreground mb-4">{error}</p>
+            <Button onClick={() => window.location.reload()}>
+              Reintentar
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Gestión de Camiones</h1>
-        <Link href="/piedrinera/camiones/nuevo">
-          <Button>
-            <PlusCircle className="mr-2 h-4 w-4" /> Nuevo Camión
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Camiones</h1>
+          <p className="text-muted-foreground">Gestión de la flota de camiones</p>
+        </div>
+        <div className="flex gap-2">
+          <Button asChild>
+            <Link href="/piedrinera/camiones/nuevo">
+              <Plus className="mr-2 h-4 w-4" />
+              Nuevo Camión
+            </Link>
           </Button>
-        </Link>
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* Estadísticas */}
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Camiones</CardTitle>
-            <Truck className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="pb-2">
+            <CardDescription>Total Camiones</CardDescription>
+            <CardTitle className="text-2xl">{totalCamiones}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalCamiones}</div>
-            <p className="text-xs text-muted-foreground">Vehículos registrados en la flota</p>
-          </CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Camiones Disponibles</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="pb-2">
+            <CardDescription>Disponibles</CardDescription>
+            <CardTitle className="text-2xl">{camionesDisponibles}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{camionesDisponibles}</div>
-            <p className="text-xs text-muted-foreground">Listos para despachar</p>
-          </CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Camiones en Ruta</CardTitle>
-            <Truck className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="pb-2">
+            <CardDescription>En Ruta</CardDescription>
+            <CardTitle className="text-2xl">{camionesEnRuta}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{camionesEnRuta}</div>
-            <p className="text-xs text-muted-foreground">Actualmente realizando entregas</p>
-          </CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">En Mantenimiento</CardTitle>
-            <Wrench className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="pb-2">
+            <CardDescription>En Mantenimiento</CardDescription>
+            <CardTitle className="text-2xl">{camionesEnMantenimiento}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{camionesEnMantenimiento}</div>
-            <p className="text-xs text-muted-foreground">Requieren atención técnica</p>
-          </CardContent>
         </Card>
       </div>
 
+      {/* Búsqueda */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              placeholder="Buscar por placa, marca, modelo o estado..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+              autoFocus={false}
+            />
+            {searching && (
+              <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabla de Camiones */}
       <Card>
         <CardHeader>
           <CardTitle>Lista de Camiones</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-2 mb-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Buscar camiones por placa, marca o estado..."
-                className="w-full rounded-lg bg-background pl-8"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <Button variant="outline">Filtrar</Button>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left p-2 font-medium">Placa</th>
+                  <th className="text-left p-2 font-medium">Marca</th>
+                  <th className="text-left p-2 font-medium">Modelo</th>
+                  <th className="text-left p-2 font-medium">Capacidad (m³)</th>
+                  <th className="text-left p-2 font-medium">Estado</th>
+                  <th className="text-left p-2 font-medium">Activo</th>
+                  <th className="text-left p-2 font-medium">Documentación</th>
+                  <th className="text-left p-2 font-medium">Próx. Mantenimiento</th>
+                  <th className="text-right p-2 font-medium">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {camiones.map((camion) => (
+                  <tr key={camion.id} className="border-b hover:bg-muted/50">
+                    <td className="p-2 font-medium">{camion.placa}</td>
+                    <td className="p-2">{camion.marca}</td>
+                    <td className="p-2">{camion.modelo}</td>
+                    <td className="p-2">{camion.capacidadMetrosCubicos}</td>
+                    <td className="p-2">
+                      <Badge variant={getStatusVariant(camion.estado)}>{camion.estado}</Badge>
+                    </td>
+                    <td className="p-2">
+                      <div className="flex items-center gap-1">
+                        {camion.activo ? (
+                          <>
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <span className="text-sm text-green-600">Activo</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle className="h-4 w-4 text-red-600" />
+                            <span className="text-sm text-red-600">Inactivo</span>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-2">
+                      <div className="flex items-center gap-2">
+                        {camion.seguroVigente && camion.revisionTecnicaVigente && camion.documentacionVigente ? (
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <AlertTriangle className="h-4 w-4 text-red-600" />
+                        )}
+                        <span className="text-sm text-muted-foreground">
+                          {camion.seguroVigente && camion.revisionTecnicaVigente && camion.documentacionVigente
+                            ? "Al día"
+                            : "Vencida"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-2">{camion.proximoMantenimiento || "N/A"}</td>
+                    <td className="p-2">
+                      <div className="flex justify-end gap-2">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                            <DropdownMenuItem asChild>
+                              <Link href={`/piedrinera/camiones/${camion.id}`}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                Ver Detalles
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link href={`/piedrinera/camiones/${camion.id}/editar`}>
+                                <Edit className="mr-2 h-4 w-4" />
+                                Editar
+                              </Link>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Placa</TableHead>
-                <TableHead>Marca</TableHead>
-                <TableHead>Modelo</TableHead>
-                <TableHead>Capacidad (m³)</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Próx. Mantenimiento</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredCamiones.map((camion) => (
-                <TableRow key={camion.id}>
-                  <TableCell className="font-medium">{camion.placa}</TableCell>
-                  <TableCell>{camion.marca}</TableCell>
-                  <TableCell>{camion.modelo}</TableCell>
-                  <TableCell>{camion.capacidadMetrosCubicos}</TableCell>
-                  <TableCell>
-                    <Badge variant={getStatusVariant(camion.estado)}>{camion.estado}</Badge>
-                  </TableCell>
-                  <TableCell>{camion.proximoMantenimiento}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Link href={`/piedrinera/camiones/${camion.id}`}>
-                        <Button variant="outline" size="sm">
-                          <Eye className="h-4 w-4" />
-                          <span className="sr-only">Ver</span>
-                        </Button>
-                      </Link>
-                      <Link href={`/piedrinera/camiones/${camion.id}/editar`}>
-                        <Button variant="outline" size="sm">
-                          <Edit className="h-4 w-4" />
-                          <span className="sr-only">Editar</span>
-                        </Button>
-                      </Link>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {filteredCamiones.length === 0 && (
-            <p className="text-center text-muted-foreground mt-4">No se encontraron camiones.</p>
+          {camiones.length === 0 && (
+            <div className="text-center py-8">
+              <Truck className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No se encontraron camiones</h3>
+              <p className="text-muted-foreground mb-4">
+                {searchTerm
+                  ? "No hay camiones que coincidan con tu búsqueda."
+                  : "Aún no hay camiones registrados."}
+              </p>
+              <Button asChild>
+                <Link href="/piedrinera/camiones/nuevo">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Agregar Primer Camión
+                </Link>
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>

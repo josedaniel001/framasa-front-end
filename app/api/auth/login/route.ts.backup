@@ -1,0 +1,87 @@
+// ESTE ARCHIVO YA NO SE USA - La autenticación ahora se maneja con Django JWT
+// Se mantiene como backup por si acaso
+
+/*
+import { NextRequest, NextResponse } from 'next/server'
+import { query } from '@/lib/db'
+import { generateToken } from '@/lib/auth'
+import bcrypt from 'bcryptjs'
+import type { Usuario } from '@/types/database'
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { username, password } = body
+
+    // Validar que se enviaron los campos requeridos
+    if (!username || !password) {
+      return NextResponse.json(
+        { error: 'Usuario y contraseña son requeridos' },
+        { status: 400 }
+      )
+    }
+
+    // Buscar el usuario en la base de datos
+    const result = await query(
+      'SELECT id, username, email, password_hash, rol, activo FROM usuarios WHERE username = $1 AND activo = true',
+      [username]
+    )
+
+    if (result.rows.length === 0) {
+      return NextResponse.json(
+        { error: 'Credenciales incorrectas' },
+        { status: 401 }
+      )
+    }
+
+    const user = result.rows[0]
+
+    // Verificar la contraseña
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash)
+
+    if (!isPasswordValid) {
+      return NextResponse.json(
+        { error: 'Credenciales incorrectas' },
+        { status: 401 }
+      )
+    }
+
+    // Crear objeto usuario sin la contraseña
+    const usuario: Usuario = {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      rol: user.rol,
+      activo: user.activo,
+    }
+
+    // Generar token JWT
+    const token = generateToken(usuario)
+
+    // Retornar el token y los datos del usuario
+    return NextResponse.json(
+      {
+        success: true,
+        token,
+        usuario,
+      },
+      { status: 200 }
+    )
+  } catch (error) {
+    console.error('Login error:', error)
+    return NextResponse.json(
+      { error: 'Error al iniciar sesión. Por favor, intente nuevamente.' },
+      { status: 500 }
+    )
+  }
+}
+*/
+
+// Esta ruta ahora redirige a Django
+export async function POST() {
+  return Response.json(
+    { error: 'Esta ruta ya no se usa. Usa Django en http://localhost:8000/api/auth/login/' },
+    { status: 410 } // 410 Gone
+  )
+}
+

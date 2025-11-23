@@ -33,17 +33,30 @@ function MainContent({ children }: { children: React.ReactNode }) {
 }
 
 export function MainLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, isLoading } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
 
   const isPublicRoute = pathname === "/login" || pathname === "/"
 
   useEffect(() => {
-    if (!isAuthenticated && !isPublicRoute) {
+    // Solo redirigir si ya terminó de cargar y no está autenticado
+    if (!isLoading && !isAuthenticated && !isPublicRoute) {
       router.push("/login")
     }
-  }, [isAuthenticated, isPublicRoute, router])
+  }, [isAuthenticated, isLoading, isPublicRoute, router])
+
+  // Mostrar loading mientras se verifica el token
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
+          <p className="mt-4 text-sm text-muted-foreground">Cargando...</p>
+        </div>
+      </div>
+    )
+  }
 
   if (isPublicRoute) {
     return <div className="min-h-screen">{children}</div>

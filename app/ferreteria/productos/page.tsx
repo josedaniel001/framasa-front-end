@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { PlusCircle, Search, Package, CheckCircle, XCircle, AlertCircle, Eye, Edit, Filter, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from "lucide-react"
+import { PlusCircle, Search, Package, CheckCircle, XCircle, AlertCircle, Eye, Edit, Filter, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -23,12 +23,47 @@ import {
   PaginationEllipsis,
 } from "@/components/ui/pagination"
 import Link from "next/link"
-import { getSampleProductosFerreteria } from "@/lib/sample-data"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet } from "@/lib/api-client"
 
 const ITEMS_PER_PAGE = 5
 
+interface ProductoFerreteria {
+  id: string
+  codigo: string
+  nombre: string
+  descripcion: string
+  categoria: string
+  precioVenta: number
+  costoUnitario: number
+  unidadMedida: string
+  stockActual: number
+  stockMinimo: number
+  activo: boolean
+  fechaCreacion: string
+  ultimaActualizacion: string
+}
+
+interface ProductosStats {
+  total_productos: number
+  productos_activos: number
+  productos_inactivos: number
+  productos_stock_bajo: number
+}
+
+interface Categoria {
+  id: number
+  nombre: string
+  descripcion: string
+  activo: boolean
+}
+
 export default function ProductosFerreteriaPage() {
-  const productos = getSampleProductosFerreteria()
+  const [productos, setProductos] = useState<ProductoFerreteria[]>([])
+  const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [stats, setStats] = useState<ProductosStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
   const [filters, setFilters] = useState({
@@ -37,39 +72,89 @@ export default function ProductosFerreteriaPage() {
     stockMinimo: "todos",
   })
 
-  // Obtener categorías únicas
-  const categorias = useMemo(() => {
-    const cats = new Set(productos.map((p) => p.categoria))
-    return Array.from(cats).sort()
-  }, [productos])
+  // Cargar datos desde Django
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true)
+        setError(null)
 
-  // Filtrar productos
-  const filteredProductos = useMemo(() => {
-    return productos.filter((producto) => {
-      // Búsqueda por texto
-      const matchesSearch =
-        producto.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        producto.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        producto.categoria.toLowerCase().includes(searchTerm.toLowerCase())
+        // Construir query params para filtros
+        const params = new URLSearchParams()
+        if (searchTerm) params.append('search', searchTerm)
+        if (filters.estado !== 'todos') params.append('estado', filters.estado)
+        if (filters.categoria !== 'todas') params.append('categoria', filters.categoria)
+        if (filters.stockMinimo !== 'todos') params.append('stockMinimo', filters.stockMinimo)
 
-      // Filtro por estado
-      const matchesEstado =
-        filters.estado === "todos" ||
-        (filters.estado === "activo" && producto.activo) ||
-        (filters.estado === "inactivo" && !producto.activo)
+        const queryString = params.toString()
+        const productosUrl = queryString 
+          ? `${API_ENDPOINTS.FERRETERIA.PRODUCTOS}?${queryString}`
+          : API_ENDPOINTS.FERRETERIA.PRODUCTOS
 
-      // Filtro por categoría
-      const matchesCategoria = filters.categoria === "todas" || producto.categoria === filters.categoria
+        // Cargar productos, estadísticas y categorías en paralelo
+        // Usar Promise.allSettled para capturar errores individuales sin detener todo
+        const [productosResult, statsResult, categoriasResult] = await Promise.allSettled([
+          apiGet<any>(productosUrl),
+          apiGet<ProductosStats>(API_ENDPOINTS.FERRETERIA.PRODUCTOS_STATS),
+          apiGet<Categoria[]>(API_ENDPOINTS.FERRETERIA.PRODUCTOS_CATEGORIAS),
+        ])
 
-      // Filtro por stock mínimo
-      const matchesStock =
-        filters.stockMinimo === "todos" ||
-        (filters.stockMinimo === "bajo" && producto.stockActual <= producto.stockMinimo) ||
-        (filters.stockMinimo === "suficiente" && producto.stockActual > producto.stockMinimo)
+        // Procesar resultados con manejo de errores individual
+        let productosResponse: any = null
+        let statsData: ProductosStats | null = null
+        let categoriasData: Categoria[] = []
 
-      return matchesSearch && matchesEstado && matchesCategoria && matchesStock
-    })
-  }, [productos, searchTerm, filters])
+        if (productosResult.status === 'fulfilled') {
+          productosResponse = productosResult.value
+        } else {
+          console.error('Error al cargar productos:', productosResult.reason)
+          throw productosResult.reason
+        }
+
+        if (statsResult.status === 'fulfilled') {
+          statsData = statsResult.value
+        } else {
+          console.warn('Error al cargar estadísticas (continuando sin ellas):', statsResult.reason)
+        }
+
+        if (categoriasResult.status === 'fulfilled') {
+          categoriasData = categoriasResult.value || []
+        } else {
+          console.warn('Error al cargar categorías (continuando sin ellas):', categoriasResult.reason)
+        }
+
+        // Manejar respuesta paginada o directa de Django REST Framework
+        let productosData: ProductoFerreteria[] = []
+        if (Array.isArray(productosResponse)) {
+          productosData = productosResponse
+        } else if (productosResponse && Array.isArray(productosResponse.results)) {
+          // Respuesta paginada de DRF
+          productosData = productosResponse.results
+        } else if (productosResponse && productosResponse.data && Array.isArray(productosResponse.data)) {
+          // Otra posible estructura
+          productosData = productosResponse.data
+        } else {
+          console.warn('Formato de respuesta inesperado:', productosResponse)
+          productosData = []
+        }
+
+        setProductos(productosData)
+        setStats(statsData)
+        setCategorias(Array.isArray(categoriasData) ? categoriasData : [])
+      } catch (err) {
+        console.error('Error al cargar productos:', err)
+        setError('Error al cargar los productos. Por favor, intenta de nuevo.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData()
+  }, [searchTerm, filters])
+
+  // Los productos ya vienen filtrados del backend, pero aplicamos paginación
+  // Asegurarse de que siempre sea un array
+  const filteredProductos = Array.isArray(productos) ? productos : []
 
   // Paginación
   const totalPages = Math.ceil(filteredProductos.length / ITEMS_PER_PAGE)
@@ -97,13 +182,41 @@ export default function ProductosFerreteriaPage() {
   const hasActiveFilters =
     filters.estado !== "todos" || filters.categoria !== "todas" || filters.stockMinimo !== "todos"
 
-  const totalProductos = productos.length
-  const productosActivos = productos.filter((p) => p.activo).length
-  const productosInactivos = productos.filter((p) => !p.activo).length
-  const productosStockBajo = productos.filter((p) => p.stockActual <= p.stockMinimo).length
+  // Usar estadísticas del backend
+  const totalProductos = stats?.total_productos ?? 0
+  const productosActivos = stats?.productos_activos ?? 0
+  const productosInactivos = stats?.productos_inactivos ?? 0
+  const productosStockBajo = stats?.productos_stock_bajo ?? 0
 
   const getStatusVariant = (activo: boolean) => {
     return activo ? "default" : "destructive"
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-muted-foreground">Cargando productos...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="flex flex-col items-center gap-4">
+              <AlertCircle className="h-8 w-8 text-destructive" />
+              <p className="text-center text-destructive">{error}</p>
+              <Button onClick={() => window.location.reload()}>Reintentar</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -229,8 +342,8 @@ export default function ProductosFerreteriaPage() {
                           <SelectContent>
                             <SelectItem value="todas">Todas</SelectItem>
                             {categorias.map((cat) => (
-                              <SelectItem key={cat} value={cat}>
-                                {cat}
+                              <SelectItem key={cat.id} value={cat.nombre}>
+                                {cat.nombre}
                               </SelectItem>
                             ))}
                           </SelectContent>

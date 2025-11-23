@@ -2,7 +2,7 @@
 
 import { CardDescription } from "@/components/ui/card"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,53 +24,159 @@ import {
   Line,
 } from "recharts"
 import { Download, Users } from "lucide-react"
-import { sampleFacturasVenta, sampleClientes } from "@/lib/sample-data"
+
+interface Cliente {
+  id: string
+  nombre: string
+  nit: string
+}
+
+interface KPIs {
+  ventasTotales: number
+  totalFacturas: number
+  productosVendidos: number
+  clientesActivos: number
+  porcentajeVentas: number
+  diferenciaFacturas: number
+}
+
+interface VentaPorMes {
+  mes: string
+  ventas: number
+  facturas: number
+}
+
+interface VentaPorFormaPago {
+  name: string
+  value: number
+  color: string
+}
+
+interface TopProducto {
+  producto: string
+  ventas: number
+  ingresos: number
+}
+
+interface TopCliente {
+  id: string
+  nombre: string
+  numero_facturas: number
+  total_compras: number
+}
+
+// Función helper para obtener el token
+const getAuthToken = (): string | null => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('token')
+  }
+  return null
+}
 
 export default function ReportesPage() {
   const [tipoReporte, setTipoReporte] = useState("ventas")
   const [fechaInicio, setFechaInicio] = useState("")
   const [fechaFin, setFechaFin] = useState("")
   const [filtroCliente, setFiltroCliente] = useState("all")
+  
+  // Estados para datos
+  const [kpis, setKpis] = useState<KPIs | null>(null)
+  const [ventasPorMes, setVentasPorMes] = useState<VentaPorMes[]>([])
+  const [ventasPorFormaPago, setVentasPorFormaPago] = useState<VentaPorFormaPago[]>([])
+  const [topProductos, setTopProductos] = useState<TopProducto[]>([])
+  const [topClientes, setTopClientes] = useState<TopCliente[]>([])
+  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  // Datos para gráficos
-  const ventasPorMes = [
-    { mes: "Ene", ventas: 45000, facturas: 25 },
-    { mes: "Feb", ventas: 52000, facturas: 30 },
-    { mes: "Mar", ventas: 48000, facturas: 28 },
-    { mes: "Abr", ventas: 61000, facturas: 35 },
-    { mes: "May", ventas: 55000, facturas: 32 },
-    { mes: "Jun", ventas: 67000, facturas: 40 },
-  ]
+  // Cargar datos iniciales
+  useEffect(() => {
+    cargarDatos()
+  }, [fechaInicio, fechaFin])
 
-  const ventasPorFormaPago = [
-    { name: "Efectivo", value: 45, color: "#10B981" },
-    { name: "Crédito", value: 30, color: "#3B82F6" },
-    { name: "Transferencia", value: 20, color: "#8B5CF6" },
-    { name: "Cheque", value: 5, color: "#F59E0B" },
-  ]
+  // Cargar clientes para el filtro
+  useEffect(() => {
+    cargarClientes()
+  }, [])
 
-  const topProductos = [
-    { producto: "Cemento UGC 50kg", ventas: 150, ingresos: 12750 },
-    { producto: "Block 15x20x40", ventas: 2500, ingresos: 8750 },
-    { producto: 'Piedrin 3/4"', ventas: 45, ingresos: 8100 },
-    { producto: 'Electrodo 6013 1/8"', ventas: 250, ingresos: 3125 },
-  ]
+  const cargarClientes = async () => {
+    try {
+      const token = getAuthToken()
+      if (!token) return
 
-  const topClientes = sampleClientes
-    .map((cliente) => {
-      const ventasCliente = sampleFacturasVenta.filter((v) => v.cliente_id === cliente.id)
-      const totalCompras = ventasCliente.reduce((acc, v) => acc + v.total, 0)
-      return {
-        ...cliente,
-        total_compras: totalCompras,
-        numero_facturas: ventasCliente.length,
+      const response = await fetch("/api/ferreteria/clientes", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setClientes(data)
       }
-    })
-    .sort((a, b) => b.total_compras - a.total_compras)
+    } catch (err) {
+      console.error("Error al cargar clientes:", err)
+    }
+  }
+
+  const cargarDatos = async () => {
+    setIsLoading(true)
+    setError(null)
+    const token = getAuthToken()
+
+    if (!token) {
+      setError("No hay token de autenticación")
+      setIsLoading(false)
+      return
+    }
+
+    try {
+      // Construir query params
+      const params = new URLSearchParams()
+      if (fechaInicio) params.append('fechaInicio', fechaInicio)
+      if (fechaFin) params.append('fechaFin', fechaFin)
+
+      const headers = {
+        Authorization: `Bearer ${token}`,
+      }
+
+      // Cargar todos los datos en paralelo
+      const [kpisRes, ventasMesRes, formaPagoRes, productosRes, clientesRes] = await Promise.all([
+        fetch(`/api/ferreteria/reportes/kpis?${params.toString()}`, { headers }),
+        fetch("/api/ferreteria/reportes/ventas-mes", { headers }),
+        fetch("/api/ferreteria/reportes/ventas-forma-pago", { headers }),
+        fetch("/api/ferreteria/reportes/top-productos", { headers }),
+        fetch("/api/ferreteria/reportes/top-clientes", { headers }),
+      ])
+
+      if (!kpisRes.ok || !ventasMesRes.ok || !formaPagoRes.ok || !productosRes.ok || !clientesRes.ok) {
+        throw new Error("Error al cargar los datos")
+      }
+
+      const [kpisData, ventasMesData, formaPagoData, productosData, clientesData] = await Promise.all([
+        kpisRes.json(),
+        ventasMesRes.json(),
+        formaPagoRes.json(),
+        productosRes.json(),
+        clientesRes.json(),
+      ])
+
+      setKpis(kpisData)
+      setVentasPorMes(ventasMesData)
+      setVentasPorFormaPago(formaPagoData)
+      setTopProductos(productosData)
+      setTopClientes(clientesData)
+    } catch (err) {
+      console.error("Error al cargar datos:", err)
+      setError("Error al cargar los datos. Por favor, intenta nuevamente.")
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const generarReporte = () => {
     console.log("Generando reporte:", { tipoReporte, fechaInicio, fechaFin, filtroCliente })
-    alert(`Generando reporte de ${tipoReporte}`)
+    cargarDatos()
   }
 
   const exportarPDF = () => {
@@ -79,6 +185,35 @@ export default function ReportesPage() {
 
   const exportarExcel = () => {
     alert("Exportando reporte a Excel...")
+  }
+
+  if (isLoading && !kpis) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent"></div>
+          <p className="mt-4 text-sm text-muted-foreground">Cargando reportes...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-red-600">Error</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{error}</p>
+            <Button onClick={cargarDatos} className="mt-4">
+              Reintentar
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -144,7 +279,7 @@ export default function ReportesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos los clientes</SelectItem>
-                  {sampleClientes.map((cliente) => (
+                  {clientes.map((cliente) => (
                     <SelectItem key={cliente.id} value={cliente.id.toString()}>
                       {cliente.nombre}
                     </SelectItem>
@@ -163,8 +298,10 @@ export default function ReportesPage() {
             <CardTitle className="text-sm font-medium">Ventas Totales</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">Q 328,000</div>
-            <p className="text-xs text-muted-foreground">+18.2% vs mes anterior</p>
+            <div className="text-2xl font-bold">Q {kpis?.ventasTotales.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</div>
+            <p className="text-xs text-muted-foreground">
+              {kpis && kpis.porcentajeVentas > 0 ? '+' : ''}{kpis?.porcentajeVentas.toFixed(1) || '0'}% vs mes anterior
+            </p>
           </CardContent>
         </Card>
 
@@ -173,8 +310,10 @@ export default function ReportesPage() {
             <CardTitle className="text-sm font-medium">Facturas Emitidas</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">190</div>
-            <p className="text-xs text-muted-foreground">+12 vs mes anterior</p>
+            <div className="text-2xl font-bold">{kpis?.totalFacturas || 0}</div>
+            <p className="text-xs text-muted-foreground">
+              {kpis && kpis.diferenciaFacturas > 0 ? '+' : ''}{kpis?.diferenciaFacturas || 0} vs mes anterior
+            </p>
           </CardContent>
         </Card>
 
@@ -183,8 +322,8 @@ export default function ReportesPage() {
             <CardTitle className="text-sm font-medium">Productos Vendidos</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">2,945</div>
-            <p className="text-xs text-muted-foreground">+8.1% vs mes anterior</p>
+            <div className="text-2xl font-bold">{kpis?.productosVendidos.toLocaleString() || '0'}</div>
+            <p className="text-xs text-muted-foreground">Total de unidades vendidas</p>
           </CardContent>
         </Card>
 
@@ -193,8 +332,8 @@ export default function ReportesPage() {
             <CardTitle className="text-sm font-medium">Clientes Activos</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">48</div>
-            <p className="text-xs text-muted-foreground">+5 nuevos este mes</p>
+            <div className="text-2xl font-bold">{kpis?.clientesActivos || 0}</div>
+            <p className="text-xs text-muted-foreground">Clientes con compras en el período</p>
           </CardContent>
         </Card>
       </div>
@@ -212,7 +351,7 @@ export default function ReportesPage() {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="mes" />
                 <YAxis />
-                <Tooltip formatter={(value) => [`Q ${value.toLocaleString()}`, "Ventas"]} />
+                <Tooltip formatter={(value: number) => [`Q ${value.toLocaleString()}`, "Ventas"]} />
                 <Bar dataKey="ventas" fill="#3B82F6" />
               </RechartsBarChart>
             </ResponsiveContainer>
@@ -228,11 +367,11 @@ export default function ReportesPage() {
             <ResponsiveContainer width="100%" height={300}>
               <RechartsPieChart>
                 <Pie
-                  data={ventasPorFormaPago}
+                  data={ventasPorFormaPago as any}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  label={(entry: any) => `${entry.name} ${entry.percent ? (entry.percent * 100).toFixed(0) : 0}%`}
                   outerRadius={80}
                   fill="#8884d8"
                   dataKey="value"
@@ -265,13 +404,21 @@ export default function ReportesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {topProductos.map((producto, index) => (
-                  <TableRow key={index}>
-                    <TableCell className="font-medium">{producto.producto}</TableCell>
-                    <TableCell className="text-center">{producto.ventas}</TableCell>
-                    <TableCell className="text-right">Q {producto.ingresos.toLocaleString()}</TableCell>
+                {topProductos.length > 0 ? (
+                  topProductos.map((producto, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">{producto.producto}</TableCell>
+                      <TableCell className="text-center">{producto.ventas}</TableCell>
+                      <TableCell className="text-right">Q {producto.ingresos.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center text-muted-foreground">
+                      No hay datos disponibles
+                    </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </CardContent>
@@ -292,13 +439,21 @@ export default function ReportesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {topClientes.slice(0, 4).map((cliente) => (
-                  <TableRow key={cliente.id}>
-                    <TableCell className="font-medium">{cliente.nombre}</TableCell>
-                    <TableCell className="text-center">{cliente.numero_facturas}</TableCell>
-                    <TableCell className="text-right">Q {cliente.total_compras.toLocaleString()}</TableCell>
+                {topClientes.length > 0 ? (
+                  topClientes.slice(0, 10).map((cliente) => (
+                    <TableRow key={cliente.id}>
+                      <TableCell className="font-medium">{cliente.nombre}</TableCell>
+                      <TableCell className="text-center">{cliente.numero_facturas}</TableCell>
+                      <TableCell className="text-right">Q {cliente.total_compras.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center text-muted-foreground">
+                      No hay datos disponibles
+                    </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </CardContent>
@@ -317,9 +472,6 @@ export default function ReportesPage() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="mes" />
               <YAxis yAxisId="left" />
-              <YAxis yAxisId="right" orientation="right" />
-              <Tooltip />
-
               <YAxis yAxisId="right" orientation="right" />
               <Tooltip />
               <Line
@@ -342,86 +494,6 @@ export default function ReportesPage() {
           </ResponsiveContainer>
         </CardContent>
       </Card>
-
-      {/* Additional Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Ventas Mensuales</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[200px] w-full rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground">
-              <RechartsBarChart className="h-12 w-12 text-muted-foreground/50" />
-            </div>
-            <p className="text-sm text-muted-foreground mt-2">Análisis de ingresos por mes.</p>
-            <Button variant="outline" className="mt-4 w-full bg-transparent">
-              Ver Reporte Detallado
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Productos Más Vendidos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[200px] w-full rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground">
-              <RechartsPieChart className="h-12 w-12 text-muted-foreground/50" />
-            </div>
-            <p className="text-sm text-muted-foreground mt-2">Identifica los productos con mayor demanda.</p>
-            <Button variant="outline" className="mt-4 w-full bg-transparent">
-              Ver Reporte Detallado
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Movimientos de Inventario</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[200px] w-full rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground">
-              <RechartsLineChart className="h-12 w-12 text-muted-foreground/50" />
-            </div>
-            <p className="text-sm text-muted-foreground mt-2">Historial de entradas y salidas de stock.</p>
-            <Button variant="outline" className="mt-4 w-full bg-transparent">
-              Ver Reporte Detallado
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Clientes Top</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[200px] w-full rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground">
-              <Users className="h-12 w-12 text-muted-foreground/50" />
-            </div>
-            <p className="text-sm text-muted-foreground mt-2">Clientes con mayor volumen de compra.</p>
-            <Button variant="outline" className="mt-4 w-full bg-transparent">
-              Ver Reporte Detallado
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Cotizaciones por Estado</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[200px] w-full rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground">
-              <RechartsPieChart className="h-12 w-12 text-muted-foreground/50" />
-            </div>
-            <p className="text-sm text-muted-foreground mt-2">
-              Distribución de cotizaciones por su estado (aceptadas, pendientes, rechazadas).
-            </p>
-            <Button variant="outline" className="mt-4 w-full bg-transparent">
-              Ver Reporte Detallado
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   )
 }

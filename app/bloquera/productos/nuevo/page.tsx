@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,10 +10,14 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiPost } from "@/lib/api-client"
+import { Loader2 } from "lucide-react"
 
 export default function NuevoProductoBloqueraPage() {
   const router = useRouter()
   const { toast } = useToast()
+  const [loading, setLoading] = useState(false)
 
   const [codigo, setCodigo] = useState<string>("")
   const [nombre, setNombre] = useState<string>("")
@@ -27,10 +30,10 @@ export default function NuevoProductoBloqueraPage() {
   const [stockMinimo, setStockMinimo] = useState<number>(0)
   const [activo, setActivo] = useState<boolean>(true)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!codigo || !nombre || !tipoBloque || !dimensiones || precioVentaUnitario <= 0 || costoProduccionUnitario <= 0) {
+    if (!codigo || !nombre || !tipoBloque || precioVentaUnitario <= 0 || costoProduccionUnitario <= 0) {
       toast({
         title: "Error de validación",
         description: "Por favor, completa todos los campos obligatorios y asegúrate de que los precios sean válidos.",
@@ -39,29 +42,38 @@ export default function NuevoProductoBloqueraPage() {
       return
     }
 
-    const newProduct = {
-      id: `bloq-${Date.now()}`, // Generar un ID único
-      codigo,
-      nombre,
-      descripcion,
-      tipoBloque,
-      dimensiones,
-      precioVentaUnitario,
-      costoProduccionUnitario,
-      stockActual,
-      stockMinimo,
-      activo,
-      fechaCreacion: new Date().toISOString().split("T")[0],
-      ultimaActualizacion: new Date().toISOString().split("T")[0],
-    }
+    setLoading(true)
+    try {
+      const newProduct = {
+        codigo,
+        nombre,
+        descripcion: descripcion || null,
+        tipoBloque,
+        dimensiones: dimensiones || null,
+        precioVentaUnitario,
+        costoProduccionUnitario,
+        stockActual,
+        stockMinimo,
+        activo,
+      }
 
-    console.log("Nuevo Producto Bloquera:", newProduct)
-    // Aquí integrarías con tu backend para guardar el producto
-    toast({
-      title: "Producto Creado",
-      description: `El producto ${newProduct.nombre} ha sido registrado exitosamente.`,
-    })
-    router.push("/bloquera/productos")
+      const createdProduct = await apiPost<any>(API_ENDPOINTS.BLOQUERA.PRODUCTOS, newProduct)
+
+      toast({
+        title: "Producto Creado",
+        description: `El producto "${createdProduct.nombre || nombre}" ha sido registrado exitosamente.`,
+      })
+      router.push("/bloquera/productos")
+    } catch (error: any) {
+      console.error("Error al crear producto:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Error al crear el producto. Por favor, inténtelo de nuevo.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -76,23 +88,25 @@ export default function NuevoProductoBloqueraPage() {
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
             <div className="grid gap-2">
-              <Label htmlFor="codigo">Código</Label>
+              <Label htmlFor="codigo">Código *</Label>
               <Input
                 id="codigo"
                 value={codigo}
                 onChange={(e) => setCodigo(e.target.value)}
                 placeholder="Código único del producto"
                 required
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="nombre">Nombre</Label>
+              <Label htmlFor="nombre">Nombre *</Label>
               <Input
                 id="nombre"
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
                 placeholder="Ej: Bloque de 15, Ladrillo Rojo"
                 required
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2 md:col-span-2">
@@ -102,16 +116,18 @@ export default function NuevoProductoBloqueraPage() {
                 value={descripcion}
                 onChange={(e) => setDescripcion(e.target.value)}
                 placeholder="Descripción detallada del producto"
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="tipoBloque">Tipo de Bloque</Label>
+              <Label htmlFor="tipoBloque">Tipo de Bloque *</Label>
               <Input
                 id="tipoBloque"
                 value={tipoBloque}
                 onChange={(e) => setTipoBloque(e.target.value)}
                 placeholder="Ej: Bloque de 15, Ladrillo, Adoquín"
                 required
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
@@ -121,11 +137,11 @@ export default function NuevoProductoBloqueraPage() {
                 value={dimensiones}
                 onChange={(e) => setDimensiones(e.target.value)}
                 placeholder="Ej: 15x20x40 cm, 6x12x24 cm"
-                required
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="precioVentaUnitario">Precio de Venta Unitario (Q)</Label>
+              <Label htmlFor="precioVentaUnitario">Precio de Venta Unitario (Q) *</Label>
               <Input
                 id="precioVentaUnitario"
                 type="number"
@@ -134,10 +150,11 @@ export default function NuevoProductoBloqueraPage() {
                 step="0.01"
                 min="0"
                 required
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="costoProduccionUnitario">Costo de Producción Unitario (Q)</Label>
+              <Label htmlFor="costoProduccionUnitario">Costo de Producción Unitario (Q) *</Label>
               <Input
                 id="costoProduccionUnitario"
                 type="number"
@@ -146,6 +163,7 @@ export default function NuevoProductoBloqueraPage() {
                 step="0.01"
                 min="0"
                 required
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
@@ -157,6 +175,7 @@ export default function NuevoProductoBloqueraPage() {
                 onChange={(e) => setStockActual(Number(e.target.value))}
                 min="0"
                 required
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
@@ -168,20 +187,30 @@ export default function NuevoProductoBloqueraPage() {
                 onChange={(e) => setStockMinimo(Number(e.target.value))}
                 min="0"
                 required
+                disabled={loading}
               />
             </div>
             <div className="flex items-center space-x-2">
-              <Switch id="activo" checked={activo} onCheckedChange={setActivo} />
+              <Switch id="activo" checked={activo} onCheckedChange={setActivo} disabled={loading} />
               <Label htmlFor="activo">Producto Activo</Label>
             </div>
           </CardContent>
         </Card>
 
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+          <Button type="button" variant="outline" onClick={() => router.back()} disabled={loading}>
             Cancelar
           </Button>
-          <Button type="submit">Crear Producto</Button>
+          <Button type="submit" disabled={loading}>
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creando...
+              </>
+            ) : (
+              "Crear Producto"
+            )}
+          </Button>
         </div>
       </form>
     </div>

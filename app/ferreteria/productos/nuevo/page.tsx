@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -12,6 +12,23 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet, apiPost } from "@/lib/api-client"
+import { Loader2 } from "lucide-react"
+
+interface Categoria {
+  id: number
+  nombre: string
+  descripcion: string
+  activo: boolean
+}
+
+interface UnidadMedida {
+  id: number
+  nombre: string
+  abreviatura: string
+  activo: boolean
+}
 
 export default function NuevoProductoPage() {
   const router = useRouter()
@@ -20,18 +37,60 @@ export default function NuevoProductoPage() {
   const [codigo, setCodigo] = useState<string>("")
   const [nombre, setNombre] = useState<string>("")
   const [descripcion, setDescripcion] = useState<string>("")
-  const [categoria, setCategoria] = useState<string>("")
+  const [categoriaId, setCategoriaId] = useState<string>("")
   const [precioVenta, setPrecioVenta] = useState<number>(0)
   const [costoUnitario, setCostoUnitario] = useState<number>(0)
-  const [unidadMedida, setUnidadMedida] = useState<string>("")
+  const [unidadMedidaId, setUnidadMedidaId] = useState<string>("")
   const [stockActual, setStockActual] = useState<number>(0)
   const [stockMinimo, setStockMinimo] = useState<number>(0)
   const [activo, setActivo] = useState<boolean>(true)
+  const [submitting, setSubmitting] = useState<boolean>(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Estados para cargar datos desde la API
+  const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [unidadesMedida, setUnidadesMedida] = useState<UnidadMedida[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // Cargar categorías y unidades de medida desde Django
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true)
+        const [categoriasData, unidadesData] = await Promise.all([
+          apiGet<Categoria[]>(API_ENDPOINTS.FERRETERIA.CATEGORIAS),
+          apiGet<UnidadMedida[]>(API_ENDPOINTS.FERRETERIA.UNIDADES_MEDIDA),
+        ])
+
+        // Manejar respuesta paginada o directa
+        const categoriasList = Array.isArray(categoriasData) 
+          ? categoriasData 
+          : ((categoriasData as any)?.results || (categoriasData as any)?.data || [])
+        
+        const unidadesList = Array.isArray(unidadesData) 
+          ? unidadesData 
+          : ((unidadesData as any)?.results || (unidadesData as any)?.data || [])
+
+        setCategorias(categoriasList)
+        setUnidadesMedida(unidadesList)
+      } catch (err) {
+        console.error('Error al cargar categorías y unidades:', err)
+        toast({
+          title: "Error",
+          description: "No se pudieron cargar las categorías y unidades de medida.",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData()
+  }, [toast])
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!codigo || !nombre || !categoria || precioVenta <= 0 || costoUnitario <= 0 || !unidadMedida) {
+    if (!codigo || !nombre || !categoriaId || precioVenta < 0 || costoUnitario < 0 || !unidadMedidaId) {
       toast({
         title: "Error de validación",
         description: "Por favor, completa todos los campos obligatorios y asegúrate de que los precios sean válidos.",
@@ -40,29 +99,50 @@ export default function NuevoProductoPage() {
       return
     }
 
-    const newProduct = {
-      id: `prod-${Date.now()}`, // Generar un ID único
+    const productoData = {
       codigo,
       nombre,
-      descripcion,
-      categoria,
-      precioVenta,
-      costoUnitario,
-      unidadMedida,
-      stockActual,
-      stockMinimo,
+      descripcion: descripcion || null,
+      categoria_id: Number(categoriaId),
+      unidad_medida_id: Number(unidadMedidaId),
+      precio_venta: precioVenta,
+      costo_unitario: costoUnitario,
+      stock_actual: stockActual,
+      stock_minimo: stockMinimo,
       activo,
-      fechaCreacion: new Date().toISOString().split("T")[0],
-      ultimaActualizacion: new Date().toISOString().split("T")[0],
     }
 
-    console.log("Nuevo Producto:", newProduct)
-    // Aquí integrarías con tu backend para guardar el producto
-    toast({
-      title: "Producto Creado",
-      description: `El producto ${newProduct.nombre} ha sido registrado exitosamente.`,
-    })
-    router.push("/ferreteria/productos")
+    try {
+      setSubmitting(true)
+
+      await apiPost(API_ENDPOINTS.FERRETERIA.PRODUCTOS, productoData)
+
+      toast({
+        title: "Producto Creado",
+        description: `El producto ${nombre} ha sido registrado exitosamente.`,
+      })
+      router.push("/ferreteria/productos")
+    } catch (error: any) {
+      console.error("Error al crear producto:", error)
+      console.error("URL:", API_ENDPOINTS.FERRETERIA.PRODUCTOS)
+      console.error("Datos enviados:", productoData)
+      
+      let errorMessage = "No se pudo crear el producto. Por favor, intenta nuevamente."
+      
+      if (error.status === 405) {
+        errorMessage = "El método POST no está permitido en este endpoint de Django. Verifica que el ViewSet o View tenga configurado el método 'create' o 'post' en Django REST Framework."
+      } else if (error.message) {
+        errorMessage = error.message
+      }
+      
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -107,30 +187,51 @@ export default function NuevoProductoPage() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="categoria">Categoría</Label>
-              <Input
-                id="categoria"
-                value={categoria}
-                onChange={(e) => setCategoria(e.target.value)}
-                placeholder="Ej: Herramientas, Pinturas, Fijaciones"
-                required
-              />
+              {loading ? (
+                <div className="flex items-center gap-2 h-10">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm text-muted-foreground">Cargando categorías...</span>
+                </div>
+              ) : (
+                <Select value={categoriaId} onValueChange={setCategoriaId} required>
+                  <SelectTrigger id="categoria">
+                    <SelectValue placeholder="Selecciona una categoría" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categorias
+                      .filter((cat) => cat.activo)
+                      .map((cat) => (
+                        <SelectItem key={cat.id} value={String(cat.id)}>
+                          {cat.nombre}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="grid gap-2">
               <Label htmlFor="unidadMedida">Unidad de Medida</Label>
-              <Select value={unidadMedida} onValueChange={setUnidadMedida}>
-                <SelectTrigger id="unidadMedida">
-                  <SelectValue placeholder="Selecciona unidad" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unidad">Unidad</SelectItem>
-                  <SelectItem value="caja">Caja</SelectItem>
-                  <SelectItem value="galon">Galón</SelectItem>
-                  <SelectItem value="litro">Litro</SelectItem>
-                  <SelectItem value="metro">Metro</SelectItem>
-                  <SelectItem value="pie">Pie</SelectItem>
-                  <SelectItem value="kilogramo">Kilogramo</SelectItem>
-                </SelectContent>
-              </Select>
+              {loading ? (
+                <div className="flex items-center gap-2 h-10">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm text-muted-foreground">Cargando unidades...</span>
+                </div>
+              ) : (
+                <Select value={unidadMedidaId} onValueChange={setUnidadMedidaId} required>
+                  <SelectTrigger id="unidadMedida">
+                    <SelectValue placeholder="Selecciona unidad de medida" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {unidadesMedida
+                      .filter((unidad) => unidad.activo)
+                      .map((unidad) => (
+                        <SelectItem key={unidad.id} value={String(unidad.id)}>
+                          {unidad.nombre} ({unidad.abreviatura})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="grid gap-2">
               <Label htmlFor="precioVenta">Precio de Venta (Q)</Label>
@@ -186,10 +287,19 @@ export default function NuevoProductoPage() {
         </Card>
 
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+          <Button type="button" variant="outline" onClick={() => router.back()} disabled={submitting}>
             Cancelar
           </Button>
-          <Button type="submit">Crear Producto</Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creando...
+              </>
+            ) : (
+              "Crear Producto"
+            )}
+          </Button>
         </div>
       </form>
     </div>

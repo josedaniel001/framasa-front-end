@@ -12,10 +12,14 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiPost } from "@/lib/api-client"
+import { Loader2 } from "lucide-react"
 
 export default function NuevoAgregadoPiedrineraPage() {
   const router = useRouter()
   const { toast } = useToast()
+  const [loading, setLoading] = useState(false)
 
   const [codigo, setCodigo] = useState<string>("")
   const [nombre, setNombre] = useState<string>("")
@@ -26,16 +30,20 @@ export default function NuevoAgregadoPiedrineraPage() {
   const [costoProduccionPorMetroCubico, setCostoProduccionPorMetroCubico] = useState<number>(0)
   const [stockActualMetrosCubicos, setStockActualMetrosCubicos] = useState<number>(0)
   const [stockMinimoMetrosCubicos, setStockMinimoMetrosCubicos] = useState<number>(0)
+  const [ubicacion, setUbicacion] = useState<string>("")
+  const [humedadPorcentaje, setHumedadPorcentaje] = useState<number | undefined>(undefined)
+  const [calidad, setCalidad] = useState<string>("")
+  const [proveedor, setProveedor] = useState<string>("")
+  const [fechaUltimaEntrada, setFechaUltimaEntrada] = useState<string>("")
   const [activo, setActivo] = useState<boolean>(true)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (
       !codigo ||
       !nombre ||
       !tipo ||
-      !granulometria ||
       precioVentaPorMetroCubico <= 0 ||
       costoProduccionPorMetroCubico <= 0
     ) {
@@ -47,29 +55,45 @@ export default function NuevoAgregadoPiedrineraPage() {
       return
     }
 
-    const newAgregado = {
-      id: `agr-${Date.now()}`, // Generar un ID único
-      codigo,
-      nombre,
-      descripcion,
-      tipo,
-      granulometria,
-      precioVentaPorMetroCubico,
-      costoProduccionPorMetroCubico,
-      stockActualMetrosCubicos,
-      stockMinimoMetrosCubicos,
-      activo,
-      fechaCreacion: new Date().toISOString().split("T")[0],
-      ultimaActualizacion: new Date().toISOString().split("T")[0],
-    }
+    try {
+      setLoading(true)
 
-    console.log("Nuevo Agregado:", newAgregado)
-    // Aquí integrarías con tu backend para guardar el agregado
-    toast({
-      title: "Agregado Creado",
-      description: `El agregado ${newAgregado.nombre} ha sido registrado exitosamente.`,
-    })
-    router.push("/piedrinera/productos")
+      // Preparar datos para enviar a la API
+      const newAgregado = {
+        codigo,
+        nombre,
+        descripcion: descripcion || null,
+        tipo,
+        granulometria: granulometria || null,
+        precio_venta_m3: precioVentaPorMetroCubico,
+        costo_produccion_m3: costoProduccionPorMetroCubico,
+        stock_actual_m3: stockActualMetrosCubicos,
+        stock_minimo_m3: stockMinimoMetrosCubicos,
+        ubicacion: ubicacion || null,
+        humedad_porcentaje: humedadPorcentaje || null,
+        calidad: calidad || null,
+        proveedor: proveedor || null,
+        fecha_ultima_entrada: fechaUltimaEntrada || null,
+        activo,
+      }
+
+      await apiPost(API_ENDPOINTS.PIEDRINERA.PRODUCTOS, newAgregado)
+
+      toast({
+        title: "Agregado Creado",
+        description: `El agregado ${nombre} ha sido registrado exitosamente.`,
+      })
+      router.push("/piedrinera/productos")
+    } catch (error: any) {
+      console.error("Error al crear agregado:", error)
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo crear el agregado. Por favor, intenta de nuevo.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -84,23 +108,25 @@ export default function NuevoAgregadoPiedrineraPage() {
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
             <div className="grid gap-2">
-              <Label htmlFor="codigo">Código</Label>
+              <Label htmlFor="codigo">Código *</Label>
               <Input
                 id="codigo"
                 value={codigo}
                 onChange={(e) => setCodigo(e.target.value)}
                 placeholder="Código único del agregado"
                 required
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="nombre">Nombre</Label>
+              <Label htmlFor="nombre">Nombre *</Label>
               <Input
                 id="nombre"
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
                 placeholder="Ej: Arena de Río, Grava 3/4"
                 required
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2 md:col-span-2">
@@ -110,11 +136,12 @@ export default function NuevoAgregadoPiedrineraPage() {
                 value={descripcion}
                 onChange={(e) => setDescripcion(e.target.value)}
                 placeholder="Descripción detallada del agregado"
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="tipo">Tipo</Label>
-              <Select value={tipo} onValueChange={setTipo}>
+              <Label htmlFor="tipo">Tipo *</Label>
+              <Select value={tipo} onValueChange={setTipo} disabled={loading}>
                 <SelectTrigger id="tipo">
                   <SelectValue placeholder="Selecciona tipo" />
                 </SelectTrigger>
@@ -132,12 +159,12 @@ export default function NuevoAgregadoPiedrineraPage() {
                 id="granulometria"
                 value={granulometria}
                 onChange={(e) => setGranulometria(e.target.value)}
-                placeholder="Ej: Fino, 3/4, 1/2"
-                required
+                placeholder="Ej: 0-5mm, 3/4, 1/2"
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="precioVentaPorMetroCubico">Precio de Venta por m³ (Q)</Label>
+              <Label htmlFor="precioVentaPorMetroCubico">Precio de Venta por m³ (Q) *</Label>
               <Input
                 id="precioVentaPorMetroCubico"
                 type="number"
@@ -146,10 +173,11 @@ export default function NuevoAgregadoPiedrineraPage() {
                 step="0.01"
                 min="0"
                 required
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="costoProduccionPorMetroCubico">Costo de Producción por m³ (Q)</Label>
+              <Label htmlFor="costoProduccionPorMetroCubico">Costo de Producción por m³ (Q) *</Label>
               <Input
                 id="costoProduccionPorMetroCubico"
                 type="number"
@@ -158,42 +186,107 @@ export default function NuevoAgregadoPiedrineraPage() {
                 step="0.01"
                 min="0"
                 required
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="stockActualMetrosCubicos">Stock Actual (m³)</Label>
+              <Label htmlFor="stockActualMetrosCubicos">Stock Actual (m³) *</Label>
               <Input
                 id="stockActualMetrosCubicos"
                 type="number"
                 value={stockActualMetrosCubicos}
                 onChange={(e) => setStockActualMetrosCubicos(Number(e.target.value))}
+                step="0.01"
                 min="0"
                 required
+                disabled={loading}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="stockMinimoMetrosCubicos">Stock Mínimo (m³)</Label>
+              <Label htmlFor="stockMinimoMetrosCubicos">Stock Mínimo (m³) *</Label>
               <Input
                 id="stockMinimoMetrosCubicos"
                 type="number"
                 value={stockMinimoMetrosCubicos}
                 onChange={(e) => setStockMinimoMetrosCubicos(Number(e.target.value))}
+                step="0.01"
                 min="0"
                 required
+                disabled={loading}
               />
             </div>
-            <div className="flex items-center space-x-2">
-              <Switch id="activo" checked={activo} onCheckedChange={setActivo} />
+            <div className="grid gap-2">
+              <Label htmlFor="ubicacion">Ubicación</Label>
+              <Input
+                id="ubicacion"
+                value={ubicacion}
+                onChange={(e) => setUbicacion(e.target.value)}
+                placeholder="Ej: Patio A-1"
+                disabled={loading}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="humedadPorcentaje">Humedad (%)</Label>
+              <Input
+                id="humedadPorcentaje"
+                type="number"
+                value={humedadPorcentaje || ""}
+                onChange={(e) => setHumedadPorcentaje(e.target.value ? Number(e.target.value) : undefined)}
+                step="0.01"
+                min="0"
+                max="100"
+                placeholder="Ej: 3.2"
+                disabled={loading}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="calidad">Calidad</Label>
+              <Select value={calidad} onValueChange={setCalidad} disabled={loading}>
+                <SelectTrigger id="calidad">
+                  <SelectValue placeholder="Selecciona calidad" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Excelente">Excelente</SelectItem>
+                  <SelectItem value="Buena">Buena</SelectItem>
+                  <SelectItem value="Regular">Regular</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="proveedor">Proveedor</Label>
+              <Input
+                id="proveedor"
+                value={proveedor}
+                onChange={(e) => setProveedor(e.target.value)}
+                placeholder="Nombre del proveedor"
+                disabled={loading}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="fechaUltimaEntrada">Fecha Última Entrada</Label>
+              <Input
+                id="fechaUltimaEntrada"
+                type="date"
+                value={fechaUltimaEntrada}
+                onChange={(e) => setFechaUltimaEntrada(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+            <div className="flex items-center space-x-2 md:col-span-2">
+              <Switch id="activo" checked={activo} onCheckedChange={setActivo} disabled={loading} />
               <Label htmlFor="activo">Agregado Activo</Label>
             </div>
           </CardContent>
         </Card>
 
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+          <Button type="button" variant="outline" onClick={() => router.back()} disabled={loading}>
             Cancelar
           </Button>
-          <Button type="submit">Crear Agregado</Button>
+          <Button type="submit" disabled={loading}>
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Crear Agregado
+          </Button>
         </div>
       </form>
     </div>

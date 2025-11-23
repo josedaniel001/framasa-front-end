@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { PlusCircle, Search, ArrowUpCircle, ArrowDownCircle, Package, DollarSign, Filter, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon, Eye, Download, RefreshCw } from "lucide-react"
+import { PlusCircle, Search, ArrowUpCircle, ArrowDownCircle, Package, DollarSign, Filter, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon, Eye, Download, RefreshCw, Loader2, AlertCircle } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -23,56 +23,204 @@ import {
   PaginationEllipsis,
 } from "@/components/ui/pagination"
 import Link from "next/link"
-import { getSampleInventarioFerreteria } from "@/lib/sample-data"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet } from "@/lib/api-client"
+import type { MovimientoInventario } from "@/types/database"
 
-const ITEMS_PER_PAGE = 5
+const ITEMS_PER_PAGE = 10
+const MOVIMIENTOS_PER_PAGE = 5
+
+interface ProductoFerreteria {
+  id: string
+  codigo: string
+  nombre: string
+  descripcion: string
+  categoria: string
+  precioVenta: number
+  costoUnitario: number
+  unidadMedida: string
+  stockActual: number
+  stockMinimo: number
+  activo: boolean
+  fechaCreacion: string
+  ultimaActualizacion: string
+}
+
+interface MovimientosStats {
+  total_movimientos: number
+  movimientos_hoy: number
+  entradas_total: number
+  salidas_total: number
+}
 
 export default function InventarioFerreteriaPage() {
-  const inventario = getSampleInventarioFerreteria()
+  const [productos, setProductos] = useState<ProductoFerreteria[]>([])
+  const [movimientos, setMovimientos] = useState<MovimientoInventario[]>([])
+  const [stats, setStats] = useState<MovimientosStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
+  const [movimientosPage, setMovimientosPage] = useState(1)
   const [filters, setFilters] = useState({
     estado: "todos",
     categoria: "todas",
+    tipoMovimiento: "todos",
   })
+
+  // Cargar datos desde la API
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        // Construir query params para filtros
+        const params = new URLSearchParams()
+        if (searchTerm) params.append('search', searchTerm)
+        if (filters.categoria !== 'todas') params.append('categoria', filters.categoria)
+
+        const queryString = params.toString()
+        const productosUrl = queryString 
+          ? `${API_ENDPOINTS.FERRETERIA.PRODUCTOS}?${queryString}`
+          : API_ENDPOINTS.FERRETERIA.PRODUCTOS
+
+        // Parámetros para movimientos
+        const movParams = new URLSearchParams()
+        if (filters.tipoMovimiento !== 'todos') {
+          movParams.append('tipo_ajuste', filters.tipoMovimiento)
+        }
+        movParams.append('limit', '50') // Obtener los últimos 50 movimientos
+        const movimientosUrl = `${API_ENDPOINTS.FERRETERIA.MOVIMIENTOS_INVENTARIO}?${movParams.toString()}`
+
+        // Cargar productos y movimientos en paralelo
+        const [productosResult, movimientosResult] = await Promise.allSettled([
+          apiGet<any>(productosUrl),
+          apiGet<any>(movimientosUrl),
+        ])
+
+        // Procesar productos
+        let productosData: ProductoFerreteria[] = []
+        if (productosResult.status === 'fulfilled') {
+          const productosResponse = productosResult.value
+          if (Array.isArray(productosResponse)) {
+            productosData = productosResponse
+          } else if (productosResponse && Array.isArray(productosResponse.results)) {
+            productosData = productosResponse.results
+          } else if (productosResponse && productosResponse.data && Array.isArray(productosResponse.data)) {
+            productosData = productosResponse.data
+          }
+        } else {
+          console.error('Error al cargar productos:', productosResult.reason)
+          throw productosResult.reason
+        }
+
+        // Procesar movimientos
+        let movimientosData: MovimientoInventario[] = []
+        if (movimientosResult.status === 'fulfilled') {
+          const movimientosResponse = movimientosResult.value
+          if (Array.isArray(movimientosResponse)) {
+            movimientosData = movimientosResponse
+          } else if (movimientosResponse && Array.isArray(movimientosResponse.results)) {
+            movimientosData = movimientosResponse.results
+          } else if (movimientosResponse && movimientosResponse.data && Array.isArray(movimientosResponse.data)) {
+            movimientosData = movimientosResponse.data
+          }
+        } else {
+          console.warn('Error al cargar movimientos (continuando sin ellos):', movimientosResult.reason)
+        }
+
+        // Calcular estadísticas de movimientos
+        const hoy = new Date()
+        hoy.setHours(0, 0, 0, 0)
+        const movimientosHoy = movimientosData.filter(mov => {
+          const fechaMov = new Date(mov.fecha_creacion)
+          fechaMov.setHours(0, 0, 0, 0)
+          return fechaMov.getTime() === hoy.getTime()
+        })
+
+        const statsData: MovimientosStats = {
+          total_movimientos: movimientosData.length,
+          movimientos_hoy: movimientosHoy.length,
+          entradas_total: movimientosData.filter(m => m.tipo_ajuste === 'ENTRADA').reduce((sum, m) => sum + m.cantidad, 0),
+          salidas_total: movimientosData.filter(m => m.tipo_ajuste === 'SALIDA').reduce((sum, m) => sum + m.cantidad, 0),
+        }
+
+        setProductos(productosData)
+        setMovimientos(movimientosData)
+        setStats(statsData)
+      } catch (err) {
+        console.error('Error al cargar datos de inventario:', err)
+        setError('Error al cargar los datos de inventario. Por favor, intenta de nuevo.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData()
+  }, [searchTerm, filters.categoria, filters.tipoMovimiento])
 
   // Obtener categorías únicas
   const categorias = useMemo(() => {
-    const cats = new Set(inventario.map((item) => item.categoria))
+    const cats = new Set(productos.map((item) => item.categoria).filter(Boolean))
     return Array.from(cats).sort()
-  }, [inventario])
+  }, [productos])
 
-  // Filtrar inventario
-  const filteredInventario = useMemo(() => {
-    return inventario.filter((item) => {
+  // Filtrar productos
+  const filteredProductos = useMemo(() => {
+    return productos.filter((item) => {
       // Búsqueda por texto
       const matchesSearch =
-        item.nombreProducto.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.codigo.toLowerCase().includes(searchTerm.toLowerCase())
 
       // Filtro por estado
       const matchesEstado =
         filters.estado === "todos" ||
-        (filters.estado === "bajo" && item.cantidad <= item.stockMinimo) ||
-        (filters.estado === "suficiente" && item.cantidad > item.stockMinimo)
+        (filters.estado === "bajo" && item.stockActual <= item.stockMinimo) ||
+        (filters.estado === "suficiente" && item.stockActual > item.stockMinimo)
 
       // Filtro por categoría
       const matchesCategoria = filters.categoria === "todas" || item.categoria === filters.categoria
 
-      return matchesSearch && matchesEstado && matchesCategoria
+      // Solo productos activos
+      return item.activo && matchesSearch && matchesEstado && matchesCategoria
     })
-  }, [inventario, searchTerm, filters])
+  }, [productos, searchTerm, filters])
 
-  // Paginación
-  const totalPages = Math.ceil(filteredInventario.length / ITEMS_PER_PAGE)
+  // Filtrar movimientos
+  const filteredMovimientos = useMemo(() => {
+    let filtered = movimientos
+
+    if (filters.tipoMovimiento !== 'todos') {
+      filtered = filtered.filter(m => m.tipo_ajuste === filters.tipoMovimiento)
+    }
+
+    // Ordenar por fecha más reciente
+    return filtered.sort((a, b) => {
+      const fechaA = new Date(a.fecha_creacion).getTime()
+      const fechaB = new Date(b.fecha_creacion).getTime()
+      return fechaB - fechaA
+    })
+  }, [movimientos, filters.tipoMovimiento])
+
+  // Paginación de productos
+  const totalPages = Math.ceil(filteredProductos.length / ITEMS_PER_PAGE)
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
   const endIndex = startIndex + ITEMS_PER_PAGE
-  const paginatedInventario = filteredInventario.slice(startIndex, endIndex)
+  const paginatedProductos = filteredProductos.slice(startIndex, endIndex)
+
+  // Paginación de movimientos
+  const movimientosTotalPages = Math.ceil(filteredMovimientos.length / MOVIMIENTOS_PER_PAGE)
+  const movimientosStartIndex = (movimientosPage - 1) * MOVIMIENTOS_PER_PAGE
+  const movimientosEndIndex = movimientosStartIndex + MOVIMIENTOS_PER_PAGE
+  const paginatedMovimientos = filteredMovimientos.slice(movimientosStartIndex, movimientosEndIndex)
 
   // Resetear página cuando cambian los filtros
   const handleFilterChange = (key: string, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }))
     setCurrentPage(1)
+    setMovimientosPage(1)
   }
 
   const handleSearchChange = (value: string) => {
@@ -81,12 +229,72 @@ export default function InventarioFerreteriaPage() {
   }
 
   const clearFilters = () => {
-    setFilters({ estado: "todos", categoria: "todas" })
+    setFilters({ estado: "todos", categoria: "todas", tipoMovimiento: "todos" })
     setSearchTerm("")
     setCurrentPage(1)
+    setMovimientosPage(1)
   }
 
-  const hasActiveFilters = filters.estado !== "todos" || filters.categoria !== "todas"
+  const hasActiveFilters =
+    filters.estado !== "todos" || filters.categoria !== "todas" || filters.tipoMovimiento !== "todos"
+
+  // Calcular estadísticas
+  const totalProductos = productos.filter(p => p.activo).length
+  const productosStockBajo = productos.filter(p => p.activo && p.stockActual <= p.stockMinimo).length
+  const valorTotalInventario = productos
+    .filter(p => p.activo)
+    .reduce((sum, item) => sum + item.stockActual * (item.costoUnitario || 0), 0)
+
+  const getTipoMovimientoBadge = (tipo: string) => {
+    switch (tipo) {
+      case "ENTRADA":
+        return <Badge variant="default" className="bg-green-500">Entrada</Badge>
+      case "SALIDA":
+        return <Badge variant="destructive">Salida</Badge>
+      case "CORRECCION":
+        return <Badge variant="secondary">Corrección</Badge>
+      default:
+        return <Badge variant="outline">{tipo}</Badge>
+    }
+  }
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('es-GT', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-muted-foreground">Cargando inventario...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="flex flex-col items-center gap-4">
+              <AlertCircle className="h-8 w-8 text-destructive" />
+              <p className="text-center text-destructive">{error}</p>
+              <Button onClick={() => window.location.reload()}>Reintentar</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -99,14 +307,14 @@ export default function InventarioFerreteriaPage() {
           <Button variant="outline" onClick={() => {
             // Función para exportar a CSV
             const headers = ["Código", "Nombre", "Categoría", "Cantidad", "Stock Mínimo", "Estado", "Valor Total"]
-            const rows = filteredInventario.map(item => [
+            const rows = filteredProductos.map(item => [
               item.codigo,
-              item.nombreProducto,
+              item.nombre,
               item.categoria,
-              item.cantidad,
+              item.stockActual,
               item.stockMinimo,
-              item.cantidad <= item.stockMinimo ? "Bajo" : "Suficiente",
-              (item.cantidad * item.precioUnitario).toFixed(2)
+              item.stockActual <= item.stockMinimo ? "Bajo" : "Suficiente",
+              (item.stockActual * (item.costoUnitario || 0)).toFixed(2)
             ])
             const csv = [headers, ...rows].map(row => row.join(",")).join("\n")
             const blob = new Blob([csv], { type: "text/csv" })
@@ -133,7 +341,7 @@ export default function InventarioFerreteriaPage() {
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{inventario.length}</div>
+            <div className="text-2xl font-bold">{totalProductos}</div>
             <p className="text-xs text-muted-foreground">Artículos únicos en stock</p>
           </CardContent>
         </Card>
@@ -145,9 +353,7 @@ export default function InventarioFerreteriaPage() {
           <CardContent>
             <div className="text-2xl font-bold">
               Q{" "}
-              {inventario
-                .reduce((sum, item) => sum + item.cantidad * item.precioUnitario, 0)
-                .toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {valorTotalInventario.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <p className="text-xs text-muted-foreground">Costo total de los productos en stock</p>
           </CardContent>
@@ -158,19 +364,17 @@ export default function InventarioFerreteriaPage() {
             <ArrowDownCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {inventario.filter((item) => item.cantidad <= item.stockMinimo).length}
-            </div>
+            <div className="text-2xl font-bold">{productosStockBajo}</div>
             <p className="text-xs text-muted-foreground">Artículos que necesitan reabastecimiento</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Últimos Movimientos</CardTitle>
+            <CardTitle className="text-sm font-medium">Movimientos Hoy</CardTitle>
             <ArrowUpCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">15</div>
+            <div className="text-2xl font-bold">{stats?.movimientos_hoy ?? 0}</div>
             <p className="text-xs text-muted-foreground">Movimientos en las últimas 24h</p>
           </CardContent>
         </Card>
@@ -285,7 +489,7 @@ export default function InventarioFerreteriaPage() {
             )}
           </div>
           <div className="mb-4 text-sm text-muted-foreground">
-            Mostrando {startIndex + 1}-{Math.min(endIndex, filteredInventario.length)} de {filteredInventario.length} artículos
+            Mostrando {startIndex + 1}-{Math.min(endIndex, filteredProductos.length)} de {filteredProductos.length} artículos
           </div>
           <Table>
             <TableHeader>
@@ -301,24 +505,24 @@ export default function InventarioFerreteriaPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedInventario.map((item) => (
+              {paginatedProductos.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">{item.codigo}</TableCell>
-                  <TableCell>{item.nombreProducto}</TableCell>
+                  <TableCell>{item.nombre}</TableCell>
                   <TableCell>{item.categoria}</TableCell>
-                  <TableCell>{item.cantidad}</TableCell>
+                  <TableCell>{item.stockActual}</TableCell>
                   <TableCell>{item.stockMinimo}</TableCell>
                   <TableCell className="font-medium">
-                    Q{(item.cantidad * item.precioUnitario).toFixed(2)}
+                    Q{((item.stockActual || 0) * (item.costoUnitario || 0)).toFixed(2)}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={item.cantidad <= item.stockMinimo ? "destructive" : "secondary"}>
-                      {item.cantidad <= item.stockMinimo ? "Bajo" : "Suficiente"}
+                    <Badge variant={item.stockActual <= item.stockMinimo ? "destructive" : "secondary"}>
+                      {item.stockActual <= item.stockMinimo ? "Bajo" : "Suficiente"}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      <Link href={`/ferreteria/productos/${item.productoId}`}>
+                      <Link href={`/ferreteria/productos/${item.id}`}>
                         <Button variant="ghost" size="sm" title="Ver detalles">
                           <Eye className="h-4 w-4" />
                         </Button>
@@ -334,7 +538,7 @@ export default function InventarioFerreteriaPage() {
               ))}
             </TableBody>
           </Table>
-          {paginatedInventario.length === 0 && (
+          {paginatedProductos.length === 0 && (
             <p className="text-center text-muted-foreground mt-4">No se encontraron artículos.</p>
           )}
           {totalPages > 1 && (
@@ -395,6 +599,131 @@ export default function InventarioFerreteriaPage() {
                 </PaginationContent>
               </Pagination>
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Sección de Movimientos Recientes */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Movimientos de Inventario Recientes</CardTitle>
+            <Select
+              value={filters.tipoMovimiento}
+              onValueChange={(value) => handleFilterChange("tipoMovimiento", value)}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos los tipos</SelectItem>
+                <SelectItem value="ENTRADA">Entradas</SelectItem>
+                <SelectItem value="SALIDA">Salidas</SelectItem>
+                <SelectItem value="CORRECCION">Correcciones</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {filteredMovimientos.length === 0 ? (
+            <p className="text-center text-muted-foreground mt-4">No se encontraron movimientos.</p>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Producto</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Cantidad</TableHead>
+                    <TableHead>Stock Anterior</TableHead>
+                    <TableHead>Stock Nuevo</TableHead>
+                    <TableHead>Razón</TableHead>
+                    <TableHead>Referencia</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedMovimientos.map((movimiento) => (
+                    <TableRow key={movimiento.id}>
+                      <TableCell>{formatDate(movimiento.fecha_creacion)}</TableCell>
+                      <TableCell>
+                        {movimiento.producto?.nombre || `Producto #${movimiento.producto_id}`}
+                        {movimiento.producto?.codigo && (
+                          <span className="text-xs text-muted-foreground ml-1">({movimiento.producto.codigo})</span>
+                        )}
+                      </TableCell>
+                      <TableCell>{getTipoMovimientoBadge(movimiento.tipo_ajuste)}</TableCell>
+                      <TableCell>{movimiento.cantidad}</TableCell>
+                      <TableCell>{movimiento.stock_anterior}</TableCell>
+                      <TableCell className="font-medium">{movimiento.stock_nuevo}</TableCell>
+                      <TableCell className="max-w-xs truncate" title={movimiento.razon}>
+                        {movimiento.razon}
+                      </TableCell>
+                      <TableCell>{movimiento.referencia || "-"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {movimientosTotalPages > 1 && (
+                <div className="mt-4">
+                  <Pagination>
+                    <PaginationContent>
+                      <PaginationItem>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setMovimientosPage((prev) => Math.max(1, prev - 1))}
+                          disabled={movimientosPage === 1}
+                          className="gap-1"
+                        >
+                          <ChevronLeftIcon className="h-4 w-4" />
+                          <span className="hidden sm:block">Anterior</span>
+                        </Button>
+                      </PaginationItem>
+                      {Array.from({ length: movimientosTotalPages }, (_, i) => i + 1).map((page) => {
+                        if (
+                          page === 1 ||
+                          page === movimientosTotalPages ||
+                          (page >= movimientosPage - 1 && page <= movimientosPage + 1)
+                        ) {
+                          return (
+                            <PaginationItem key={page}>
+                              <Button
+                                variant={movimientosPage === page ? "outline" : "ghost"}
+                                size="sm"
+                                onClick={() => setMovimientosPage(page)}
+                                className={movimientosPage === page ? "font-semibold" : ""}
+                              >
+                                {page}
+                              </Button>
+                            </PaginationItem>
+                          )
+                        } else if (page === movimientosPage - 2 || page === movimientosPage + 2) {
+                          return (
+                            <PaginationItem key={page}>
+                              <PaginationEllipsis />
+                            </PaginationItem>
+                          )
+                        }
+                        return null
+                      })}
+                      <PaginationItem>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setMovimientosPage((prev) => Math.min(movimientosTotalPages, prev + 1))}
+                          disabled={movimientosPage === movimientosTotalPages}
+                          className="gap-1"
+                        >
+                          <span className="hidden sm:block">Siguiente</span>
+                          <ChevronRightIcon className="h-4 w-4" />
+                        </Button>
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

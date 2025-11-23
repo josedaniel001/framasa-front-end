@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -14,112 +14,126 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Package, Search, Plus, MoreHorizontal, Edit, Eye, Filter } from "lucide-react"
+import { Package, Search, Plus, MoreHorizontal, Edit, Eye, Filter, Loader2 } from "lucide-react"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet } from "@/lib/api-client"
+import { useToast } from "@/hooks/use-toast"
 
-// Datos de ejemplo para agregados
-const agregados = [
-  {
-    id: 1,
-    nombre: "Arena de Río",
-    categoria: "Arena",
-    granulometria: "0-5mm",
-    stock: 450,
-    stockMinimo: 200,
-    unidad: "m³",
-    precioVenta: 85.0,
-    ubicacion: "Patio A-1",
-    calidad: "Excelente",
-    humedad: "3.2%",
-    ultimaEntrada: "2024-01-15",
-    proveedor: "Cantera San José",
-  },
-  {
-    id: 2,
-    nombre: 'Grava 3/4"',
-    categoria: "Grava",
-    granulometria: "19mm",
-    stock: 320,
-    stockMinimo: 150,
-    unidad: "m³",
-    precioVenta: 95.0,
-    ubicacion: "Patio B-2",
-    calidad: "Buena",
-    humedad: "1.8%",
-    ultimaEntrada: "2024-01-14",
-    proveedor: "Agregados del Norte",
-  },
-  {
-    id: 3,
-    nombre: 'Piedrín 1/2"',
-    categoria: "Piedrín",
-    granulometria: "12.5mm",
-    stock: 180,
-    stockMinimo: 250,
-    unidad: "m³",
-    precioVenta: 105.0,
-    ubicacion: "Patio C-1",
-    calidad: "Excelente",
-    humedad: "0.5%",
-    ultimaEntrada: "2024-01-13",
-    proveedor: "Cantera El Progreso",
-  },
-  {
-    id: 4,
-    nombre: "Arena Lavada",
-    categoria: "Arena",
-    granulometria: "0-3mm",
-    stock: 275,
-    stockMinimo: 100,
-    unidad: "m³",
-    precioVenta: 120.0,
-    ubicacion: "Patio A-3",
-    calidad: "Excelente",
-    humedad: "2.1%",
-    ultimaEntrada: "2024-01-16",
-    proveedor: "Lavadero Central",
-  },
-  {
-    id: 5,
-    nombre: 'Grava 1"',
-    categoria: "Grava",
-    granulometria: "25mm",
-    stock: 95,
-    stockMinimo: 120,
-    unidad: "m³",
-    precioVenta: 110.0,
-    ubicacion: "Patio B-1",
-    calidad: "Buena",
-    humedad: "1.2%",
-    ultimaEntrada: "2024-01-12",
-    proveedor: "Agregados del Norte",
-  },
-  {
-    id: 6,
-    nombre: "Arena Amarilla",
-    categoria: "Arena",
-    granulometria: "0-4mm",
-    stock: 380,
-    stockMinimo: 200,
-    unidad: "m³",
-    precioVenta: 75.0,
-    ubicacion: "Patio A-2",
-    calidad: "Regular",
-    humedad: "4.1%",
-    ultimaEntrada: "2024-01-11",
-    proveedor: "Cantera San José",
-  },
-]
+interface AgregadoPiedrinera {
+  id: string
+  codigo: string
+  nombre: string
+  tipo: string
+  granulometria: string
+  precioVenta: number
+  stock: number
+  stockMinimo: number
+  activo: boolean
+  ubicacion?: string
+  calidad?: string
+  proveedor?: string
+}
+
+interface AgregadosStats {
+  total_agregados: number
+  agregados_activos: number
+  agregados_inactivos: number
+  agregados_stock_bajo: number
+}
 
 export default function PiedrinerapProductosPage() {
+  const { toast } = useToast()
+  const [agregados, setAgregados] = useState<AgregadoPiedrinera[]>([])
+  const [allAgregados, setAllAgregados] = useState<AgregadoPiedrinera[]>([]) // Todos los agregados para filtrado local
+  const [stats, setStats] = useState<AgregadosStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [searching, setSearching] = useState(false) // Estado separado para búsqueda
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedAgregado, setSelectedAgregado] = useState<(typeof agregados)[0] | null>(null)
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null)
 
-  const filteredAgregados = agregados.filter(
-    (agregado) =>
-      agregado.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      agregado.categoria.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      agregado.proveedor.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  // Cargar datos iniciales desde Django (solo una vez)
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        // Cargar productos y estadísticas en paralelo
+        const [productosResult, statsResult] = await Promise.allSettled([
+          apiGet<any[]>(API_ENDPOINTS.PIEDRINERA.PRODUCTOS),
+          apiGet<AgregadosStats>(API_ENDPOINTS.PIEDRINERA.PRODUCTOS_STATS),
+        ])
+
+        if (productosResult.status === 'fulfilled') {
+          setAgregados(productosResult.value)
+          setAllAgregados(productosResult.value) // Guardar todos para filtrado local
+        } else {
+          console.error('Error cargando productos:', productosResult.reason)
+          setError('Error al cargar los agregados')
+        }
+
+        if (statsResult.status === 'fulfilled') {
+          setStats(statsResult.value)
+        } else {
+          console.error('Error cargando estadísticas:', statsResult.reason)
+        }
+      } catch (err: any) {
+        console.error('Error en loadInitialData:', err)
+        setError(err.message || 'Error al cargar los datos')
+        toast({
+          title: "Error",
+          description: "No se pudieron cargar los agregados. Por favor, intenta de nuevo.",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadInitialData()
+  }, [toast])
+
+  // Filtrado local con debounce
+  useEffect(() => {
+    // Limpiar timer anterior
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current)
+    }
+
+    // Si no hay término de búsqueda, mostrar todos
+    if (!searchTerm.trim()) {
+      setAgregados(allAgregados)
+      setSearching(false)
+      return
+    }
+
+    // Mostrar estado de búsqueda
+    setSearching(true)
+
+    // Debounce: esperar 300ms antes de filtrar
+    debounceTimer.current = setTimeout(() => {
+      const term = searchTerm.toLowerCase().trim()
+      const filtered = allAgregados.filter((agregado) => {
+        return (
+          agregado.nombre.toLowerCase().includes(term) ||
+          agregado.codigo.toLowerCase().includes(term) ||
+          agregado.tipo.toLowerCase().includes(term) ||
+          (agregado.granulometria && agregado.granulometria.toLowerCase().includes(term)) ||
+          (agregado.proveedor && agregado.proveedor.toLowerCase().includes(term))
+        )
+      })
+      setAgregados(filtered)
+      setSearching(false)
+    }, 300)
+
+    // Cleanup
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current)
+      }
+    }
+  }, [searchTerm, allAgregados])
 
   const getStockStatus = (stock: number, stockMinimo: number) => {
     if (stock <= stockMinimo * 0.5) {
@@ -131,7 +145,9 @@ export default function PiedrinerapProductosPage() {
     }
   }
 
-  const getCalidadBadge = (calidad: string) => {
+  const getCalidadBadge = (calidad?: string) => {
+    if (!calidad) return null
+    
     const variants = {
       Excelente: "default",
       Buena: "secondary",
@@ -139,6 +155,45 @@ export default function PiedrinerapProductosPage() {
     } as const
 
     return <Badge variant={variants[calidad as keyof typeof variants] || "outline"}>{calidad}</Badge>
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Agregados</h1>
+            <p className="text-muted-foreground">Gestión de arena, grava, piedrín y otros agregados</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Agregados</h1>
+            <p className="text-muted-foreground">Gestión de arena, grava, piedrín y otros agregados</p>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="text-center py-8">
+            <Package className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Error al cargar datos</h3>
+            <p className="text-muted-foreground mb-4">{error}</p>
+            <Button onClick={() => window.location.reload()}>
+              Reintentar
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -163,24 +218,58 @@ export default function PiedrinerapProductosPage() {
         </div>
       </div>
 
+      {/* Estadísticas */}
+      {stats && (
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Total Agregados</CardDescription>
+              <CardTitle className="text-2xl">{stats.total_agregados}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Activos</CardDescription>
+              <CardTitle className="text-2xl">{stats.agregados_activos}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Inactivos</CardDescription>
+              <CardTitle className="text-2xl">{stats.agregados_inactivos}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Stock Bajo</CardDescription>
+              <CardTitle className="text-2xl">{stats.agregados_stock_bajo}</CardTitle>
+            </CardHeader>
+          </Card>
+        </div>
+      )}
+
       {/* Búsqueda */}
       <Card>
         <CardContent className="pt-6">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
             <Input
-              placeholder="Buscar por nombre, categoría o proveedor..."
+              placeholder="Buscar por nombre, tipo, código o proveedor..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
+              autoFocus={false}
             />
+            {searching && (
+              <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+            )}
           </div>
         </CardContent>
       </Card>
 
       {/* Grid de Agregados */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {filteredAgregados.map((agregado) => {
+        {agregados.map((agregado) => {
           const stockStatus = getStockStatus(agregado.stock, agregado.stockMinimo)
 
           return (
@@ -190,7 +279,7 @@ export default function PiedrinerapProductosPage() {
                   <div className="space-y-1">
                     <CardTitle className="text-lg">{agregado.nombre}</CardTitle>
                     <CardDescription>
-                      {agregado.categoria} • {agregado.granulometria}
+                      {agregado.tipo} • {agregado.granulometria || 'N/A'}
                     </CardDescription>
                   </div>
                   <DropdownMenu>
@@ -233,10 +322,10 @@ export default function PiedrinerapProductosPage() {
                     </div>
                   </div>
                   <div className="text-2xl font-bold">
-                    {agregado.stock.toLocaleString()} {agregado.unidad}
+                    {agregado.stock.toLocaleString()} m³
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    Mínimo: {agregado.stockMinimo} {agregado.unidad}
+                    Mínimo: {agregado.stockMinimo} m³
                   </div>
                 </div>
 
@@ -246,26 +335,27 @@ export default function PiedrinerapProductosPage() {
                     <span className="text-muted-foreground">Precio:</span>
                     <div className="font-medium">Q{agregado.precioVenta.toFixed(2)}</div>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground">Ubicación:</span>
-                    <div className="font-medium">{agregado.ubicacion}</div>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Humedad:</span>
-                    <div className="font-medium">{agregado.humedad}</div>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Calidad:</span>
-                    <div>{getCalidadBadge(agregado.calidad)}</div>
-                  </div>
+                  {agregado.ubicacion && (
+                    <div>
+                      <span className="text-muted-foreground">Ubicación:</span>
+                      <div className="font-medium">{agregado.ubicacion}</div>
+                    </div>
+                  )}
+                  {agregado.calidad && (
+                    <div>
+                      <span className="text-muted-foreground">Calidad:</span>
+                      <div>{getCalidadBadge(agregado.calidad)}</div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Proveedor */}
-                <div className="pt-2 border-t">
-                  <div className="text-sm text-muted-foreground">Proveedor</div>
-                  <div className="font-medium">{agregado.proveedor}</div>
-                  <div className="text-xs text-muted-foreground">Última entrada: {agregado.ultimaEntrada}</div>
-                </div>
+                {agregado.proveedor && (
+                  <div className="pt-2 border-t">
+                    <div className="text-sm text-muted-foreground">Proveedor</div>
+                    <div className="font-medium">{agregado.proveedor}</div>
+                  </div>
+                )}
 
                 {/* Acciones rápidas */}
                 <div className="flex gap-2 pt-2">
@@ -289,12 +379,16 @@ export default function PiedrinerapProductosPage() {
       </div>
 
       {/* Mensaje si no hay resultados */}
-      {filteredAgregados.length === 0 && (
+      {agregados.length === 0 && (
         <Card>
           <CardContent className="text-center py-8">
             <Package className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No se encontraron agregados</h3>
-            <p className="text-muted-foreground mb-4">No hay agregados que coincidan con tu búsqueda.</p>
+            <p className="text-muted-foreground mb-4">
+              {searchTerm 
+                ? "No hay agregados que coincidan con tu búsqueda."
+                : "Aún no hay agregados registrados."}
+            </p>
             <Button asChild>
               <Link href="/piedrinera/productos/nuevo">
                 <Plus className="mr-2 h-4 w-4" />

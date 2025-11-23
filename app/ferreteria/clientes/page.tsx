@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -65,51 +65,141 @@ import {
   AlertTriangle,
 } from "lucide-react"
 import Link from "next/link"
-import { getSampleClientesFerreteria, getSampleVentasFerreteria, getSampleCotizacionesFerreteria, calcularDeudaCliente, obtenerVentasPendientesPorCliente } from "@/lib/sample-data"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet, apiFetch, apiDelete } from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
+import type { ClienteFerreteria } from "@/types/database"
+import { Loader2, AlertCircle } from "lucide-react"
 
 const ITEMS_PER_PAGE = 5
+
+interface ClientesStats {
+  total_clientes?: number
+  clientes_con_compras?: number
+  clientes_con_compras_recientes?: number
+  nuevos_clientes_mes?: number
+  valor_total_compras?: number
+  promedio_compras_por_cliente?: number
+  total_cotizaciones?: number
+  total_facturas?: number
+}
 
 export default function ClientesFerreteriaPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const clientes = getSampleClientesFerreteria()
-  const ventas = getSampleVentasFerreteria()
-  const cotizaciones = getSampleCotizacionesFerreteria()
-
+  const [clientes, setClientes] = useState<ClienteFerreteria[]>([])
+  const [stats, setStats] = useState<ClientesStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
   const [filters, setFilters] = useState({
     periodoRegistro: "todos",
     tieneCompras: "todos",
   })
-  const [selectedCliente, setSelectedCliente] = useState<any>(null)
+  const [selectedCliente, setSelectedCliente] = useState<ClienteFerreteria | null>(null)
   const [showDetailDialog, setShowDetailDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [openDropdownId, setOpenDropdownId] = useState<number | null>(null)
 
-  // Calcular estadísticas para cada cliente
-  const clientesConEstadisticas = useMemo(() => {
-    return clientes.map((cliente) => {
-      const ventasCliente = ventas.filter((v) => v.cliente === cliente.nombre || v.clienteId === cliente.id)
-      const cotizacionesCliente = cotizaciones.filter((c) => c.cliente === cliente.nombre)
-      const deudaPendiente = calcularDeudaCliente(cliente.id, ventas)
-      const ventasPendientes = obtenerVentasPendientesPorCliente(cliente.id, ventas)
+  // Cargar datos desde la API
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true)
+        setError(null)
 
-      return {
-        ...cliente,
-        numero_facturas: ventasCliente.length,
-        total_compras: ventasCliente.reduce((sum, v) => sum + v.total, 0),
-        numero_cotizaciones: cotizacionesCliente.length,
-        ultimaCompra: ventasCliente.length > 0 
-          ? ventasCliente.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0].fecha
-          : null,
-        deudaPendiente: deudaPendiente,
-        numeroVentasPendientes: ventasPendientes.length,
-        ventasPendientes: ventasPendientes,
+        // Construir query params para filtros
+        const params = new URLSearchParams()
+        if (searchTerm) params.append('search', searchTerm)
+
+        const queryString = params.toString()
+        const clientesUrl = queryString 
+          ? `${API_ENDPOINTS.FERRETERIA.CLIENTES}?${queryString}`
+          : API_ENDPOINTS.FERRETERIA.CLIENTES
+
+        // Cargar clientes y estadísticas en paralelo
+        // Las estadísticas pueden no estar disponibles aún, así que las manejamos silenciosamente
+        const [clientesResult, statsResult] = await Promise.allSettled([
+          apiGet<any>(clientesUrl),
+          (async () => {
+            try {
+              // Usar apiFetch directamente para manejar 404 silenciosamente
+              const response = await apiFetch(API_ENDPOINTS.FERRETERIA.CLIENTES_STATS)
+              if (response.ok) {
+                return await response.json()
+              } else if (response.status === 404) {
+                // Endpoint no existe aún, continuar sin estadísticas (sin loguear error)
+                return null
+              } else {
+                // Otro error, también continuar sin estadísticas (sin loguear error)
+                return null
+              }
+            } catch (error) {
+              // Cualquier error, continuar sin estadísticas (sin loguear error)
+              return null
+            }
+          })(),
+        ])
+
+        // Procesar clientes
+        let clientesData: ClienteFerreteria[] = []
+        if (clientesResult.status === 'fulfilled') {
+          const clientesResponse = clientesResult.value
+          if (Array.isArray(clientesResponse)) {
+            clientesData = clientesResponse
+          } else if (clientesResponse && Array.isArray(clientesResponse.results)) {
+            clientesData = clientesResponse.results
+          } else if (clientesResponse && clientesResponse.data && Array.isArray(clientesResponse.data)) {
+            clientesData = clientesResponse.data
+          }
+          
+          // Normalizar campos para compatibilidad
+          clientesData = clientesData.map(cliente => ({
+            ...cliente,
+            fechaRegistro: cliente.fecha_registro || cliente.fechaRegistro,
+          }))
+        } else {
+          console.error('Error al cargar clientes:', clientesResult.reason)
+          throw clientesResult.reason
+        }
+
+        // Procesar estadísticas
+        let statsData: ClientesStats | null = null
+        if (statsResult.status === 'fulfilled' && statsResult.value) {
+          statsData = statsResult.value
+        } else {
+          console.warn('Error al cargar estadísticas (continuando sin ellas):', statsResult.status === 'rejected' ? statsResult.reason : 'No disponible')
+        }
+
+        setClientes(clientesData)
+        setStats(statsData)
+      } catch (err) {
+        console.error('Error al cargar clientes:', err)
+        setError('Error al cargar los clientes. Por favor, intenta de nuevo.')
+      } finally {
+        setLoading(false)
       }
-    })
-  }, [clientes, ventas, cotizaciones])
+    }
+
+    loadData()
+  }, [searchTerm])
+
+  // Agregar estadísticas opcionales a los clientes (si vienen del backend)
+  // Si no vienen, usamos valores por defecto (0 o null)
+  const clientesConEstadisticas = useMemo(() => {
+    return clientes.map((cliente) => ({
+      ...cliente,
+      numero_facturas: cliente.numero_facturas ?? 0,
+      total_compras: cliente.total_compras ?? 0,
+      numero_cotizaciones: cliente.numero_cotizaciones ?? 0,
+      ultimaCompra: cliente.ultimaCompra ?? null,
+      deudaPendiente: cliente.deudaPendiente ?? 0,
+      numeroVentasPendientes: cliente.numeroVentasPendientes ?? 0,
+      ventasPendientes: cliente.ventasPendientes ?? [],
+    }))
+  }, [clientes])
 
   // Filtrar clientes
   const filteredClientes = useMemo(() => {
@@ -117,12 +207,15 @@ export default function ClientesFerreteriaPage() {
       // Búsqueda por texto
       const matchesSearch =
         cliente.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        cliente.nit.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        cliente.telefono.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        cliente.email.toLowerCase().includes(searchTerm.toLowerCase())
+        (cliente.nit && cliente.nit.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (cliente.telefono && cliente.telefono.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (cliente.email && cliente.email.toLowerCase().includes(searchTerm.toLowerCase()))
 
       // Filtro por período de registro
-      const fechaRegistro = new Date(cliente.fechaRegistro)
+      const fechaRegistroStr = cliente.fechaRegistro || cliente.fecha_registro
+      if (!fechaRegistroStr) return false
+      
+      const fechaRegistro = new Date(fechaRegistroStr)
       const hoy = new Date()
       let matchesPeriodo = true
 
@@ -137,12 +230,12 @@ export default function ClientesFerreteriaPage() {
         matchesPeriodo = fechaRegistro.getFullYear() === hoy.getFullYear()
       }
 
-      // Filtro por compras
+      // Filtro por compras (solo si tenemos estadísticas)
       let matchesCompras = true
       if (filters.tieneCompras === "si") {
-        matchesCompras = cliente.numero_facturas > 0
+        matchesCompras = (cliente.numero_facturas ?? 0) > 0
       } else if (filters.tieneCompras === "no") {
-        matchesCompras = cliente.numero_facturas === 0
+        matchesCompras = (cliente.numero_facturas ?? 0) === 0
       }
 
       return matchesSearch && matchesPeriodo && matchesCompras
@@ -174,24 +267,26 @@ export default function ClientesFerreteriaPage() {
 
   const hasActiveFilters = filters.periodoRegistro !== "todos" || filters.tieneCompras !== "todos"
 
-  // Estadísticas generales
-  const totalClientes = clientes.length
-  const clientesConCompras = clientesConEstadisticas.filter((c) => c.numero_facturas > 0).length
-  const clientesConComprasRecientes = new Set(
-    ventas
-      .filter((venta) => new Date(venta.fecha) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
-      .map((venta) => venta.cliente),
-  ).size
-  const nuevosClientesMes = clientesConEstadisticas.filter(
-    (c) =>
-      new Date(c.fechaRegistro).getMonth() === new Date().getMonth() &&
-      new Date(c.fechaRegistro).getFullYear() === new Date().getFullYear(),
+  // Estadísticas generales (usar stats del backend si están disponibles, sino calcular desde clientes)
+  const totalClientes = stats?.total_clientes ?? clientes.length
+  const clientesConCompras = stats?.clientes_con_compras ?? clientesConEstadisticas.filter((c) => (c.numero_facturas ?? 0) > 0).length
+  const clientesConComprasRecientes = stats?.clientes_con_compras_recientes ?? 0
+  const nuevosClientesMes = stats?.nuevos_clientes_mes ?? clientesConEstadisticas.filter(
+    (c) => {
+      const fechaRegistroStr = c.fechaRegistro || c.fecha_registro
+      if (!fechaRegistroStr) return false
+      const fechaRegistro = new Date(fechaRegistroStr)
+      return fechaRegistro.getMonth() === new Date().getMonth() &&
+        fechaRegistro.getFullYear() === new Date().getFullYear()
+    }
   ).length
-  const valorTotalCompras = clientesConEstadisticas.reduce((sum, c) => sum + c.total_compras, 0)
-  const promedioComprasPorCliente =
-    clientesConCompras > 0 ? valorTotalCompras / clientesConCompras : 0
+  const valorTotalCompras = stats?.valor_total_compras ?? clientesConEstadisticas.reduce((sum, c) => sum + (c.total_compras ?? 0), 0)
+  const promedioComprasPorCliente = stats?.promedio_compras_por_cliente ?? (clientesConCompras > 0 ? valorTotalCompras / clientesConCompras : 0)
+  const totalCotizaciones = stats?.total_cotizaciones ?? clientesConEstadisticas.reduce((sum, c) => sum + (c.numero_cotizaciones ?? 0), 0)
+  const totalFacturas = stats?.total_facturas ?? clientesConEstadisticas.reduce((sum, c) => sum + (c.numero_facturas ?? 0), 0)
 
-  const formatDate = (date: string) => {
+  const formatDate = (date: string | undefined | null) => {
+    if (!date) return "-"
     return new Date(date).toLocaleDateString("es-GT", {
       year: "numeric",
       month: "short",
@@ -236,8 +331,13 @@ export default function ClientesFerreteriaPage() {
   )
 
   const handleDeleteCliente = useCallback((cliente: any) => {
-    setSelectedCliente(cliente)
-    setShowDeleteDialog(true)
+    // Cerrar el dropdown primero para evitar problemas de accesibilidad
+    setOpenDropdownId(null)
+    // Usar setTimeout para asegurar que el dropdown se cierre antes de abrir el dialog
+    setTimeout(() => {
+      setSelectedCliente(cliente)
+      setShowDeleteDialog(true)
+    }, 100)
   }, [])
 
   const confirmDelete = async () => {
@@ -245,22 +345,21 @@ export default function ClientesFerreteriaPage() {
 
     setIsDeleting(true)
     try {
-      console.log("Eliminando cliente:", selectedCliente)
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      await apiDelete(`${API_ENDPOINTS.FERRETERIA.CLIENTES}/${selectedCliente.id}`)
 
       toast({
         title: "Cliente Eliminado",
         description: `El cliente "${selectedCliente.nombre}" ha sido eliminado exitosamente.`,
       })
       closeDeleteDialog()
-      // Refrescar la página después de eliminar
-      setTimeout(() => {
-        window.location.reload()
-      }, 500)
-    } catch (error) {
+      
+      // Remover el cliente de la lista local
+      setClientes((prev) => prev.filter((c) => c.id !== selectedCliente.id))
+    } catch (error: any) {
+      console.error("Error al eliminar cliente:", error)
       toast({
         title: "Error",
-        description: "Error al eliminar el cliente. Por favor, inténtelo de nuevo.",
+        description: error.message || "Error al eliminar el cliente. Por favor, inténtelo de nuevo.",
         variant: "destructive",
       })
     } finally {
@@ -268,7 +367,34 @@ export default function ClientesFerreteriaPage() {
     }
   }
 
-  const numeroFacturas = selectedCliente ? selectedCliente.numero_facturas || 0 : 0
+  const numeroFacturas = selectedCliente ? (selectedCliente.numero_facturas ?? 0) : 0
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-muted-foreground">Cargando clientes...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="flex flex-col items-center gap-4">
+              <AlertCircle className="h-8 w-8 text-destructive" />
+              <p className="text-center text-destructive">{error}</p>
+              <Button onClick={() => window.location.reload()}>Reintentar</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -286,14 +412,14 @@ export default function ClientesFerreteriaPage() {
               const headers = ["Nombre", "NIT", "Teléfono", "Email", "Dirección", "Fecha Registro", "Facturas", "Total Compras", "Cotizaciones"]
               const rows = filteredClientes.map((cliente) => [
                 cliente.nombre,
-                cliente.nit,
-                cliente.telefono,
-                cliente.email,
-                cliente.direccion,
-                cliente.fechaRegistro,
-                cliente.numero_facturas.toString(),
-                cliente.total_compras.toFixed(2),
-                cliente.numero_cotizaciones.toString(),
+                cliente.nit || "",
+                cliente.telefono || "",
+                cliente.email || "",
+                cliente.direccion || "",
+                cliente.fechaRegistro || cliente.fecha_registro || "",
+                (cliente.numero_facturas ?? 0).toString(),
+                (cliente.total_compras ?? 0).toFixed(2),
+                (cliente.numero_cotizaciones ?? 0).toString(),
               ])
               const csv = [headers, ...rows].map((row) => row.join(",")).join("\n")
               const blob = new Blob([csv], { type: "text/csv" })
@@ -401,9 +527,7 @@ export default function ClientesFerreteriaPage() {
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {clientesConEstadisticas.reduce((sum, c) => sum + c.numero_facturas, 0)}
-            </div>
+            <div className="text-2xl font-bold">{totalFacturas}</div>
             <p className="text-xs text-muted-foreground">Facturas emitidas</p>
           </CardContent>
         </Card>
@@ -539,44 +663,49 @@ export default function ClientesFerreteriaPage() {
               {paginatedClientes.map((cliente) => (
                 <TableRow key={cliente.id}>
                   <TableCell className="font-medium">{cliente.nombre}</TableCell>
-                  <TableCell>{cliente.nit}</TableCell>
+                  <TableCell>{cliente.nit || "-"}</TableCell>
                   <TableCell>
                     <div className="space-y-1">
-                      <div className="flex items-center gap-1 text-sm">
-                        <Phone className="h-3 w-3 text-muted-foreground" />
-                        {cliente.telefono}
-                      </div>
-                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                        <Mail className="h-3 w-3" />
-                        {cliente.email}
-                      </div>
+                      {cliente.telefono && (
+                        <div className="flex items-center gap-1 text-sm">
+                          <Phone className="h-3 w-3 text-muted-foreground" />
+                          {cliente.telefono}
+                        </div>
+                      )}
+                      {cliente.email && (
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <Mail className="h-3 w-3" />
+                          {cliente.email}
+                        </div>
+                      )}
+                      {!cliente.telefono && !cliente.email && <span className="text-sm text-muted-foreground">-</span>}
                     </div>
                   </TableCell>
-                  <TableCell>{formatDate(cliente.fechaRegistro)}</TableCell>
+                  <TableCell>{formatDate(cliente.fechaRegistro || cliente.fecha_registro)}</TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="text-xs">
-                          {cliente.numero_facturas} facturas
+                          {cliente.numero_facturas ?? 0} facturas
                         </Badge>
                         <Badge variant="outline" className="text-xs">
-                          {cliente.numero_cotizaciones} cotiz.
+                          {cliente.numero_cotizaciones ?? 0} cotiz.
                         </Badge>
-                        {cliente.deudaPendiente > 0 && (
+                        {(cliente.deudaPendiente ?? 0) > 0 && (
                           <Badge variant="destructive" className="text-xs">
-                            {cliente.numeroVentasPendientes} pend.
+                            {cliente.numeroVentasPendientes ?? 0} pend.
                           </Badge>
                         )}
                       </div>
-                      {cliente.total_compras > 0 && (
+                      {(cliente.total_compras ?? 0) > 0 && (
                         <span className="text-xs font-medium text-green-600">
-                          Q{cliente.total_compras.toFixed(2)}
+                          Q{(cliente.total_compras ?? 0).toFixed(2)}
                         </span>
                       )}
-                      {cliente.deudaPendiente > 0 && (
+                      {(cliente.deudaPendiente ?? 0) > 0 && (
                         <span className="text-xs font-medium text-red-600 flex items-center gap-1">
                           <AlertTriangle className="h-3 w-3" />
-                          Deuda: Q{cliente.deudaPendiente.toFixed(2)}
+                          Deuda: Q{(cliente.deudaPendiente ?? 0).toFixed(2)}
                         </span>
                       )}
                     </div>
@@ -593,7 +722,10 @@ export default function ClientesFerreteriaPage() {
                           <span className="sr-only">Editar</span>
                         </Button>
                       </Link>
-                      <DropdownMenu>
+                      <DropdownMenu 
+                        open={openDropdownId === cliente.id} 
+                        onOpenChange={(open) => setOpenDropdownId(open ? cliente.id : null)}
+                      >
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" className="h-8 w-8 p-0">
                             <MoreHorizontal className="h-4 w-4" />
@@ -601,20 +733,32 @@ export default function ClientesFerreteriaPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={() => handleViewCliente(cliente)}>
+                          <DropdownMenuItem onClick={() => {
+                            setOpenDropdownId(null)
+                            handleViewCliente(cliente)
+                          }}>
                             <Eye className="mr-2 h-4 w-4" />
                             Ver perfil
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleEditCliente(cliente)}>
+                          <DropdownMenuItem onClick={() => {
+                            setOpenDropdownId(null)
+                            handleEditCliente(cliente)
+                          }}>
                             <Edit className="mr-2 h-4 w-4" />
                             Editar cliente
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => handleNuevaVenta(cliente)}>
+                          <DropdownMenuItem onClick={() => {
+                            setOpenDropdownId(null)
+                            handleNuevaVenta(cliente)
+                          }}>
                             <ShoppingCart className="mr-2 h-4 w-4" />
                             Nueva venta
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleNuevaCotizacion(cliente)}>
+                          <DropdownMenuItem onClick={() => {
+                            setOpenDropdownId(null)
+                            handleNuevaCotizacion(cliente)
+                          }}>
                             <DollarSign className="mr-2 h-4 w-4" />
                             Nueva cotización
                           </DropdownMenuItem>
@@ -712,47 +856,56 @@ export default function ClientesFerreteriaPage() {
                 <div>
                   <Label className="text-sm font-medium text-muted-foreground">Nombre</Label>
                   <div className="font-semibold text-lg">{selectedCliente.nombre}</div>
-                  <div className="text-sm text-muted-foreground mt-1">NIT: {selectedCliente.nit}</div>
+                  <div className="text-sm text-muted-foreground mt-1">NIT: {selectedCliente.nit || "-"}</div>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-muted-foreground">Contacto</Label>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    {selectedCliente.telefono}
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                    <Mail className="h-4 w-4" />
-                    {selectedCliente.email}
-                  </div>
+                  {selectedCliente.telefono && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      {selectedCliente.telefono}
+                    </div>
+                  )}
+                  {selectedCliente.email && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                      <Mail className="h-4 w-4" />
+                      {selectedCliente.email}
+                    </div>
+                  )}
+                  {!selectedCliente.telefono && !selectedCliente.email && (
+                    <div className="text-sm text-muted-foreground">-</div>
+                  )}
                 </div>
               </div>
 
-              <div>
-                <Label className="text-sm font-medium text-muted-foreground">Dirección</Label>
-                <div className="flex items-center gap-2 mt-1">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <span>{selectedCliente.direccion}</span>
+              {selectedCliente.direccion && (
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground">Dirección</Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                    <span>{selectedCliente.direccion}</span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <Label className="text-sm font-medium text-muted-foreground">Fecha de Registro</Label>
                 <div className="flex items-center gap-2 mt-1">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span>{formatDate(selectedCliente.fechaRegistro)}</span>
+                  <span>{formatDate(selectedCliente.fechaRegistro || selectedCliente.fecha_registro)}</span>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted rounded-lg">
                 <div className="text-center">
                   <p className="text-2xl font-bold text-blue-600">
-                    {selectedCliente.numero_facturas || 0}
+                    {selectedCliente.numero_facturas ?? 0}
                   </p>
                   <p className="text-sm text-muted-foreground">Facturas</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-green-600">
-                    Q{(selectedCliente.total_compras || 0).toLocaleString("es-GT", {
+                    Q{(selectedCliente.total_compras ?? 0).toLocaleString("es-GT", {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
@@ -761,13 +914,13 @@ export default function ClientesFerreteriaPage() {
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-purple-600">
-                    {selectedCliente.numero_cotizaciones || 0}
+                    {selectedCliente.numero_cotizaciones ?? 0}
                   </p>
                   <p className="text-sm text-muted-foreground">Cotizaciones</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-red-600">
-                    Q{(selectedCliente.deudaPendiente || 0).toLocaleString("es-GT", {
+                    Q{(selectedCliente.deudaPendiente ?? 0).toLocaleString("es-GT", {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
@@ -776,7 +929,7 @@ export default function ClientesFerreteriaPage() {
                 </div>
               </div>
 
-              {selectedCliente.deudaPendiente > 0 && selectedCliente.ventasPendientes && selectedCliente.ventasPendientes.length > 0 && (
+              {(selectedCliente.deudaPendiente ?? 0) > 0 && selectedCliente.ventasPendientes && selectedCliente.ventasPendientes.length > 0 && (
                 <div className="p-4 bg-yellow-50 dark:bg-yellow-950 rounded-lg border border-yellow-200 dark:border-yellow-800">
                   <div className="flex items-center gap-2 mb-2">
                     <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
@@ -850,14 +1003,14 @@ export default function ClientesFerreteriaPage() {
             <div className="py-4 space-y-4">
               <div className="p-4 bg-destructive/10 rounded-lg border border-destructive/20">
                 <p className="font-semibold text-destructive">{selectedCliente.nombre}</p>
-                <p className="text-sm text-muted-foreground mt-1">NIT: {selectedCliente.nit}</p>
+                <p className="text-sm text-muted-foreground mt-1">NIT: {selectedCliente.nit || "-"}</p>
                 <div className="mt-2 flex items-center gap-4 text-sm">
                   <span>
                     <strong>{numeroFacturas}</strong> factura{numeroFacturas !== 1 ? "s" : ""}
                   </span>
                   <span>•</span>
                   <span>
-                    <strong>Q{(selectedCliente.total_compras || 0).toLocaleString("es-GT", {
+                    <strong>Q{(selectedCliente.total_compras ?? 0).toLocaleString("es-GT", {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}</strong> en compras

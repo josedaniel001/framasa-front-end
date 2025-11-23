@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, use } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -12,52 +12,134 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
-import { getSampleProductosFerreteria } from "@/lib/sample-data"
-import type { ProductoFerreteria } from "@/types/database"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Loader2 } from "lucide-react"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet, apiPut } from "@/lib/api-client"
+
+interface Categoria {
+  id: number
+  nombre: string
+  descripcion: string
+  activo: boolean
+}
+
+interface UnidadMedida {
+  id: number
+  nombre: string
+  abreviatura: string
+  activo: boolean
+}
+
+interface Producto {
+  id: number
+  codigo: string
+  nombre: string
+  descripcion: string | null
+  categoria_id: number
+  unidad_medida_id: number
+  precio_venta: number
+  costo_unitario: number
+  stock_actual: number
+  stock_minimo: number
+  activo: boolean
+}
 
 interface EditarProductoPageProps {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
 }
 
 export default function EditarProductoPage({ params }: EditarProductoPageProps) {
   const router = useRouter()
   const { toast } = useToast()
-  const productos = getSampleProductosFerreteria()
-  const productoOriginal = productos.find((p) => p.id === params.id)
+  const { id } = use(params)
 
-  const [codigo, setCodigo] = useState<string>(productoOriginal?.codigo || "")
-  const [nombre, setNombre] = useState<string>(productoOriginal?.nombre || "")
-  const [descripcion, setDescripcion] = useState<string>(productoOriginal?.descripcion || "")
-  const [categoria, setCategoria] = useState<string>(productoOriginal?.categoria || "")
-  const [precioVenta, setPrecioVenta] = useState<number>(productoOriginal?.precioVenta || 0)
-  const [costoUnitario, setCostoUnitario] = useState<number>(productoOriginal?.costoUnitario || 0)
-  const [unidadMedida, setUnidadMedida] = useState<string>(productoOriginal?.unidadMedida || "")
-  const [stockActual, setStockActual] = useState<number>(productoOriginal?.stockActual || 0)
-  const [stockMinimo, setStockMinimo] = useState<number>(productoOriginal?.stockMinimo || 0)
-  const [activo, setActivo] = useState<boolean>(productoOriginal?.activo || false)
+  const [codigo, setCodigo] = useState<string>("")
+  const [nombre, setNombre] = useState<string>("")
+  const [descripcion, setDescripcion] = useState<string>("")
+  const [categoriaId, setCategoriaId] = useState<string>("")
+  const [precioVenta, setPrecioVenta] = useState<number>(0)
+  const [costoUnitario, setCostoUnitario] = useState<number>(0)
+  const [unidadMedidaId, setUnidadMedidaId] = useState<string>("")
+  const [stockActual, setStockActual] = useState<number>(0)
+  const [stockMinimo, setStockMinimo] = useState<number>(0)
+  const [activo, setActivo] = useState<boolean>(true)
 
+  // Estados para cargar datos desde la API
+  const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [unidadesMedida, setUnidadesMedida] = useState<UnidadMedida[]>([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+
+  // Cargar producto, categorías y unidades de medida desde Django
   useEffect(() => {
-    if (!productoOriginal) {
-      toast({
-        title: "Producto no encontrado",
-        description: `El producto con ID ${params.id} no existe.`,
-        variant: "destructive",
-      })
-      router.replace("/ferreteria/productos") // Redirigir si el producto no existe
-    }
-  }, [productoOriginal, params.id, router, toast])
+    const loadData = async () => {
+      try {
+        setLoading(true)
+        const [productoData, categoriasData, unidadesData] = await Promise.all([
+          apiGet<Producto>(`${API_ENDPOINTS.FERRETERIA.PRODUCTOS}/${id}`),
+          apiGet<Categoria[]>(API_ENDPOINTS.FERRETERIA.CATEGORIAS),
+          apiGet<UnidadMedida[]>(API_ENDPOINTS.FERRETERIA.UNIDADES_MEDIDA),
+        ])
 
-  if (!productoOriginal) {
-    return null // O un componente de carga/error
+        // Manejar respuesta paginada o directa para categorías y unidades
+        const categoriasList = Array.isArray(categoriasData) 
+          ? categoriasData 
+          : ((categoriasData as any)?.results || (categoriasData as any)?.data || [])
+        
+        const unidadesList = Array.isArray(unidadesData) 
+          ? unidadesData 
+          : ((unidadesData as any)?.results || (unidadesData as any)?.data || [])
+
+        setCategorias(categoriasList)
+        setUnidadesMedida(unidadesList)
+
+        // Debug: ver qué datos está recibiendo
+        console.log('🔍 [Editar Producto] Datos recibidos del producto:', productoData)
+
+        // Cargar datos del producto
+        setCodigo(productoData.codigo || '')
+        setNombre(productoData.nombre || '')
+        setDescripcion(productoData.descripcion || "")
+        setCategoriaId(String(productoData.categoria_id || ''))
+        setPrecioVenta(productoData.precio_venta || 0)
+        setCostoUnitario(productoData.costo_unitario || 0)
+        setUnidadMedidaId(String(productoData.unidad_medida_id || ''))
+        setStockActual(productoData.stock_actual || 0)
+        setStockMinimo(productoData.stock_minimo || 0)
+        setActivo(productoData.activo ?? true)
+      } catch (err: any) {
+        console.error('Error al cargar datos:', err)
+        toast({
+          title: "Error",
+          description: err.message || "No se pudieron cargar los datos del producto.",
+          variant: "destructive",
+        })
+        router.replace("/ferreteria/productos")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData()
+  }, [id, router, toast])
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span className="text-lg">Cargando producto...</span>
+        </div>
+      </div>
+    )
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!codigo || !nombre || !categoria || precioVenta <= 0 || costoUnitario <= 0 || !unidadMedida) {
+    if (!codigo || !nombre || !categoriaId || precioVenta < 0 || costoUnitario < 0 || !unidadMedidaId) {
       toast({
         title: "Error de validación",
         description: "Por favor, completa todos los campos obligatorios y asegúrate de que los precios sean válidos.",
@@ -66,28 +148,44 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
       return
     }
 
-    const updatedProduct: ProductoFerreteria = {
-      ...productoOriginal,
-      codigo,
-      nombre,
-      descripcion,
-      categoria,
-      precioVenta,
-      costoUnitario,
-      unidadMedida,
-      stockActual,
-      stockMinimo,
-      activo,
-      ultimaActualizacion: new Date().toISOString().split("T")[0],
-    }
+    try {
+      setSubmitting(true)
 
-    console.log("Producto Actualizado:", updatedProduct)
-    // Aquí integrarías con tu backend para guardar los cambios
-    toast({
-      title: "Producto Actualizado",
-      description: `El producto ${updatedProduct.nombre} ha sido actualizado exitosamente.`,
-    })
-    router.push(`/ferreteria/productos/${updatedProduct.id}`) // Redirigir a la vista de detalle o lista
+      const productoData = {
+        codigo,
+        nombre,
+        descripcion: descripcion || null,
+        categoria_id: Number(categoriaId),
+        unidad_medida_id: Number(unidadMedidaId),
+        precio_venta: precioVenta,
+        costo_unitario: costoUnitario,
+        stock_actual: stockActual,
+        stock_minimo: stockMinimo,
+        activo,
+      }
+
+      await apiPut(`${API_ENDPOINTS.FERRETERIA.PRODUCTOS}/${id}`, productoData)
+
+      toast({
+        title: "Producto Actualizado",
+        description: `El producto ${nombre} ha sido actualizado exitosamente.`,
+      })
+      router.push(`/ferreteria/productos/${id}`)
+    } catch (error: any) {
+      console.error("Error al actualizar producto:", error)
+      
+      // Manejar errores de validación de Django
+      // El error ya viene parseado desde apiPut con el mensaje correcto
+      let errorMessage = error.message || "No se pudo actualizar el producto. Por favor, intenta nuevamente."
+      
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -96,7 +194,7 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
         <Button variant="outline" size="icon" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-3xl font-bold">Editar Producto: {productoOriginal.nombre}</h1>
+        <h1 className="text-3xl font-bold">Editar Producto: {nombre || "Cargando..."}</h1>
       </div>
       <p className="text-muted-foreground">Modifica la información del producto.</p>
 
@@ -137,30 +235,51 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
             </div>
             <div className="grid gap-2">
               <Label htmlFor="categoria">Categoría</Label>
-              <Input
-                id="categoria"
-                value={categoria}
-                onChange={(e) => setCategoria(e.target.value)}
-                placeholder="Ej: Herramientas, Pinturas, Fijaciones"
-                required
-              />
+              {loading ? (
+                <div className="flex items-center gap-2 h-10">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm text-muted-foreground">Cargando categorías...</span>
+                </div>
+              ) : (
+                <Select value={categoriaId} onValueChange={setCategoriaId} required>
+                  <SelectTrigger id="categoria">
+                    <SelectValue placeholder="Selecciona una categoría" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categorias
+                      .filter((cat) => cat.activo)
+                      .map((cat) => (
+                        <SelectItem key={cat.id} value={String(cat.id)}>
+                          {cat.nombre}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="grid gap-2">
               <Label htmlFor="unidadMedida">Unidad de Medida</Label>
-              <Select value={unidadMedida} onValueChange={setUnidadMedida}>
-                <SelectTrigger id="unidadMedida">
-                  <SelectValue placeholder="Selecciona unidad" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unidad">Unidad</SelectItem>
-                  <SelectItem value="caja">Caja</SelectItem>
-                  <SelectItem value="galon">Galón</SelectItem>
-                  <SelectItem value="litro">Litro</SelectItem>
-                  <SelectItem value="metro">Metro</SelectItem>
-                  <SelectItem value="pie">Pie</SelectItem>
-                  <SelectItem value="kilogramo">Kilogramo</SelectItem>
-                </SelectContent>
-              </Select>
+              {loading ? (
+                <div className="flex items-center gap-2 h-10">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm text-muted-foreground">Cargando unidades...</span>
+                </div>
+              ) : (
+                <Select value={unidadMedidaId} onValueChange={setUnidadMedidaId} required>
+                  <SelectTrigger id="unidadMedida">
+                    <SelectValue placeholder="Selecciona unidad de medida" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {unidadesMedida
+                      .filter((unidad) => unidad.activo)
+                      .map((unidad) => (
+                        <SelectItem key={unidad.id} value={String(unidad.id)}>
+                          {unidad.nombre} ({unidad.abreviatura})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="grid gap-2">
               <Label htmlFor="precioVenta">Precio de Venta (Q)</Label>
@@ -216,10 +335,19 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
         </Card>
 
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+          <Button type="button" variant="outline" onClick={() => router.back()} disabled={submitting}>
             Cancelar
           </Button>
-          <Button type="submit">Guardar Cambios</Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Guardando...
+              </>
+            ) : (
+              "Guardar Cambios"
+            )}
+          </Button>
         </div>
       </form>
     </div>

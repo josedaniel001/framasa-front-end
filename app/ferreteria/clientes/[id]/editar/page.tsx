@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, use } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -10,72 +10,112 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
-import { getSampleClientesFerreteria } from "@/lib/sample-data"
 import type { ClienteFerreteria } from "@/types/database"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Loader2 } from "lucide-react"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet, apiPut } from "@/lib/api-client"
 
 interface EditarClientePageProps {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
 }
 
 export default function EditarClientePage({ params }: EditarClientePageProps) {
   const router = useRouter()
   const { toast } = useToast()
-  const clientes = getSampleClientesFerreteria()
-  const clienteOriginal = clientes.find((c) => c.id === params.id)
+  const { id } = use(params)
 
-  const [nombre, setNombre] = useState<string>(clienteOriginal?.nombre || "")
-  const [nit, setNit] = useState<string>(clienteOriginal?.nit || "")
-  const [direccion, setDireccion] = useState<string>(clienteOriginal?.direccion || "")
-  const [telefono, setTelefono] = useState<string>(clienteOriginal?.telefono || "")
-  const [email, setEmail] = useState<string>(clienteOriginal?.email || "")
+  const [nombre, setNombre] = useState<string>("")
+  const [nit, setNit] = useState<string>("")
+  const [direccion, setDireccion] = useState<string>("")
+  const [telefono, setTelefono] = useState<string>("")
+  const [email, setEmail] = useState<string>("")
+  const [activo, setActivo] = useState<boolean>(true)
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
 
+  // Cargar cliente desde la API
   useEffect(() => {
-    if (!clienteOriginal) {
-      toast({
-        title: "Cliente no encontrado",
-        description: `El cliente con ID ${params.id} no existe.`,
-        variant: "destructive",
-      })
-      router.replace("/ferreteria/clientes") // Redirigir si el cliente no existe
+    const loadCliente = async () => {
+      try {
+        setLoading(true)
+        const clienteData = await apiGet<ClienteFerreteria>(`${API_ENDPOINTS.FERRETERIA.CLIENTES}/${id}`)
+        
+        setNombre(clienteData.nombre || "")
+        setNit(clienteData.nit || "")
+        setDireccion(clienteData.direccion || "")
+        setTelefono(clienteData.telefono || "")
+        setEmail(clienteData.email || "")
+        setActivo(clienteData.activo !== undefined ? clienteData.activo : true)
+      } catch (error: any) {
+        console.error("Error al cargar cliente:", error)
+        toast({
+          title: "Error",
+          description: error.message || "Error al cargar el cliente. Por favor, inténtelo de nuevo.",
+          variant: "destructive",
+        })
+        router.push("/ferreteria/clientes")
+      } finally {
+        setLoading(false)
+      }
     }
-  }, [clienteOriginal, params.id, router, toast])
 
-  if (!clienteOriginal) {
-    return null // O un componente de carga/error
-  }
+    loadCliente()
+  }, [id, router, toast])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!nombre || !nit || !telefono) {
+    if (!nombre || !telefono) {
       toast({
         title: "Error de validación",
-        description: "Por favor, completa los campos obligatorios (Nombre, NIT, Teléfono).",
+        description: "Por favor, completa los campos obligatorios (Nombre y Teléfono).",
         variant: "destructive",
       })
       return
     }
 
-    const updatedCliente: ClienteFerreteria = {
-      ...clienteOriginal,
-      nombre,
-      nit,
-      direccion,
-      telefono,
-      email,
-      // fechaRegistro no se actualiza, es la fecha de creación
-    }
+    try {
+      setSubmitting(true)
 
-    console.log("Cliente Actualizado:", updatedCliente)
-    // Aquí integrarías con tu backend para guardar los cambios
-    toast({
-      title: "Cliente Actualizado",
-      description: `El cliente ${updatedCliente.nombre} ha sido actualizado exitosamente.`,
-    })
-    router.push("/ferreteria/clientes") // Redirigir a la lista de clientes
+      const clienteData = {
+        nombre,
+        nit: nit || null,
+        direccion: direccion || null,
+        telefono,
+        email: email || null,
+        activo,
+      }
+
+      await apiPut(`${API_ENDPOINTS.FERRETERIA.CLIENTES}/${id}`, clienteData)
+
+      toast({
+        title: "Cliente Actualizado",
+        description: `El cliente ${nombre} ha sido actualizado exitosamente.`,
+      })
+      router.push("/ferreteria/clientes")
+    } catch (error: any) {
+      console.error("Error al actualizar cliente:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Error al actualizar el cliente. Por favor, inténtelo de nuevo.",
+        variant: "destructive",
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span className="text-lg">Cargando cliente...</span>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -84,7 +124,7 @@ export default function EditarClientePage({ params }: EditarClientePageProps) {
         <Button variant="outline" size="icon" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-3xl font-bold">Editar Cliente: {clienteOriginal.nombre}</h1>
+        <h1 className="text-3xl font-bold">Editar Cliente: {nombre || "Cargando..."}</h1>
       </div>
       <p className="text-muted-foreground">Modifica la información del cliente.</p>
 
@@ -111,7 +151,6 @@ export default function EditarClientePage({ params }: EditarClientePageProps) {
                 value={nit}
                 onChange={(e) => setNit(e.target.value)}
                 placeholder="Número de Identificación Tributaria"
-                required
               />
             </div>
             <div className="grid gap-2 md:col-span-2">
@@ -148,10 +187,19 @@ export default function EditarClientePage({ params }: EditarClientePageProps) {
         </Card>
 
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+          <Button type="button" variant="outline" onClick={() => router.back()} disabled={submitting}>
             Cancelar
           </Button>
-          <Button type="submit">Guardar Cambios</Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Guardando...
+              </>
+            ) : (
+              "Guardar Cambios"
+            )}
+          </Button>
         </div>
       </form>
     </div>

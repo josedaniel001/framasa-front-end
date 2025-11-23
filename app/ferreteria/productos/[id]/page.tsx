@@ -1,31 +1,79 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, use, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { ArrowLeft, Edit, Package, DollarSign, TrendingUp, AlertCircle, CheckCircle, XCircle } from "lucide-react"
+import { ArrowLeft, Edit, Package, DollarSign, TrendingUp, AlertCircle, CheckCircle, XCircle, Loader2 } from "lucide-react"
 import Link from "next/link"
-import { getSampleProductosFerreteria } from "@/lib/sample-data"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet } from "@/lib/api-client"
+import { useToast } from "@/hooks/use-toast"
 
 interface VerProductoPageProps {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
+}
+
+interface ProductoFerreteria {
+  id: string
+  codigo: string
+  nombre: string
+  descripcion: string
+  categoria: string
+  precioVenta: number
+  costoUnitario: number
+  unidadMedida: string
+  stockActual: number
+  stockMinimo: number
+  activo: boolean
+  fechaCreacion: string
+  ultimaActualizacion: string
 }
 
 export default function VerProductoPage({ params }: VerProductoPageProps) {
   const router = useRouter()
-  const productos = getSampleProductosFerreteria()
-  const producto = productos.find((p) => p.id === params.id)
+  const { toast } = useToast()
+  const { id } = use(params)
+  
+  const [producto, setProducto] = useState<ProductoFerreteria | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!producto) {
-      router.replace("/ferreteria/productos")
+    const loadProducto = async () => {
+      try {
+        setLoading(true)
+        const productoData = await apiGet<ProductoFerreteria>(`${API_ENDPOINTS.FERRETERIA.PRODUCTOS}/${id}`)
+        setProducto(productoData)
+      } catch (error: any) {
+        console.error('Error al cargar producto:', error)
+        toast({
+          title: "Error",
+          description: error.message || "No se pudo cargar el producto.",
+          variant: "destructive",
+        })
+        router.replace("/ferreteria/productos")
+      } finally {
+        setLoading(false)
+      }
     }
-  }, [producto, router])
+
+    loadProducto()
+  }, [id, router, toast])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-muted-foreground">Cargando producto...</p>
+        </div>
+      </div>
+    )
+  }
 
   if (!producto) {
     return null

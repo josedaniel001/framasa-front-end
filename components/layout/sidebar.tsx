@@ -83,8 +83,8 @@ const navigationItems = [
     modulo: ModuloSistema.PLANILLAS,
     items: [
       { title: "Empleados", url: "/planillas/empleados" },
-      { title: "Asistencia", url: "/planillas/asistencia" },
-      { title: "Nómina", url: "/planillas/nomina" },
+      { title: "Asistencia", url: "/planillas/asistencias" },
+      { title: "Nómina", url: "/planillas/nominas" },
     ],
   },
   {

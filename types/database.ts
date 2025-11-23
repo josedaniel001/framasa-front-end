@@ -56,10 +56,11 @@ export enum EstadoProduccion {
 }
 
 export enum TipoMovimiento {
-  ENTRADA = "entrada",
-  SALIDA = "salida",
-  AJUSTE = "ajuste",
-  TRANSFERENCIA = "transferencia",
+  ENTRADA = "ENTRADA",
+  SALIDA = "SALIDA",
+  CORRECCION = "CORRECCION",
+  AJUSTE = "AJUSTE",
+  TRANSFERENCIA = "TRANSFERENCIA",
 }
 
 export interface Usuario {
@@ -117,13 +118,26 @@ export interface Pago {
 
 // Tipos específicos para Ferretería
 export interface ClienteFerreteria {
-  id: string
+  id: number
   nombre: string
-  nit: string
-  direccion: string
-  telefono: string
-  email: string
-  fechaRegistro: string
+  nit: string | null
+  direccion: string | null
+  telefono: string | null
+  email: string | null
+  activo: boolean
+  fecha_registro: string
+  created_at: string
+  updated_at: string
+  // Campos adicionales para compatibilidad con el frontend
+  fechaRegistro?: string
+  // Estadísticas opcionales (pueden venir del backend o calcularse)
+  numero_facturas?: number
+  total_compras?: number
+  numero_cotizaciones?: number
+  ultimaCompra?: string | null
+  deudaPendiente?: number
+  numeroVentasPendientes?: number
+  ventasPendientes?: any[]
 }
 
 export interface VentaFerreteria {
@@ -160,6 +174,33 @@ export interface ItemVenta {
   subtotal: number
 }
 
+// Tipos específicos para Bloquera
+export interface ProductoBloquera {
+  id: number | string
+  codigo: string
+  nombre: string
+  descripcion?: string | null
+  tipoBloque: string
+  dimensiones?: string | null
+  precioVentaUnitario: number
+  costoProduccionUnitario: number
+  stockActual: number
+  stockMinimo: number
+  activo: boolean
+  fechaCreacion?: string
+  ultimaActualizacion?: string
+  // Campos adicionales para compatibilidad
+  tieneStockBajo?: boolean
+  // Campos en snake_case para compatibilidad con API
+  tipo_bloque?: string
+  precio_unitario?: number
+  costo_produccion?: number
+  stock_actual?: number
+  stock_minimo?: number
+  created_at?: string
+  updated_at?: string
+}
+
 export interface Cotizacion {
   id: string
   numero: string
@@ -188,18 +229,29 @@ export interface ItemCotizacion {
 }
 
 export interface MovimientoInventario {
-  id: string
-  productoId: string
-  producto: Producto
-  tipo: TipoMovimiento
+  id: number
+  producto_id: number
+  producto?: {
+    id: number
+    codigo?: string
+    nombre: string
+    descripcion?: string
+    categoria?: string
+  }
+  tipo_ajuste: "ENTRADA" | "SALIDA" | "CORRECCION"
   cantidad: number
-  cantidadAnterior: number
-  cantidadNueva: number
-  costo?: number
-  referencia?: string
-  observaciones?: string
-  usuarioId: string
-  fecha: Date
+  stock_anterior: number
+  stock_nuevo: number
+  razon: string
+  referencia?: string | null
+  usuario_id?: number | null
+  usuario?: {
+    id: number
+    username: string
+    first_name?: string
+    last_name?: string
+  }
+  fecha_creacion: string
 }
 
 export interface OrdenTrabajo {

@@ -1,0 +1,80 @@
+// ESTE ARCHIVO YA NO SE USA - La autenticación ahora se maneja con Django JWT
+// Se mantiene como backup por si acaso
+
+/*
+import { NextRequest, NextResponse } from 'next/server'
+import { extractTokenFromHeader, verifyToken } from '@/lib/auth'
+import { query } from '@/lib/db'
+import type { Usuario } from '@/types/database'
+
+export async function GET(request: NextRequest) {
+  try {
+    // Extraer el token del header Authorization
+    const authHeader = request.headers.get('authorization')
+    const token = extractTokenFromHeader(authHeader)
+
+    if (!token) {
+      return NextResponse.json(
+        { error: 'Token no proporcionado' },
+        { status: 401 }
+      )
+    }
+
+    // Verificar el token
+    const payload = verifyToken(token)
+
+    if (!payload) {
+      return NextResponse.json(
+        { error: 'Token inválido o expirado' },
+        { status: 401 }
+      )
+    }
+
+    // Verificar que el usuario aún existe y está activo en la base de datos
+    const result = await query(
+      'SELECT id, username, email, rol, activo FROM usuarios WHERE id = $1 AND activo = true',
+      [payload.userId]
+    )
+
+    if (result.rows.length === 0) {
+      return NextResponse.json(
+        { error: 'Usuario no encontrado o inactivo' },
+        { status: 401 }
+      )
+    }
+
+    const user = result.rows[0]
+
+    const usuario: Usuario = {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      rol: user.rol,
+      activo: user.activo,
+    }
+
+    return NextResponse.json(
+      {
+        valid: true,
+        usuario,
+      },
+      { status: 200 }
+    )
+  } catch (error) {
+    console.error('Token verification error:', error)
+    return NextResponse.json(
+      { error: 'Error al verificar el token' },
+      { status: 500 }
+    )
+  }
+}
+*/
+
+// Esta ruta ahora redirige a Django
+export async function GET() {
+  return Response.json(
+    { error: 'Esta ruta ya no se usa. Usa Django en http://localhost:8000/api/auth/verify/' },
+    { status: 410 } // 410 Gone
+  )
+}
+
