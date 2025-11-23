@@ -96,7 +96,7 @@ Por defecto usa `http://localhost:8000`.
 ### Terminal 1 - Backend Django:
 ```powershell
 cd backend
-venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 python manage.py migrate
 python manage.py runserver
 ```
