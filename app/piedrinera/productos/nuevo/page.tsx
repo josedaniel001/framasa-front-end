@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -13,13 +13,16 @@ import { Textarea } from "@/components/ui/textarea"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { API_ENDPOINTS } from "@/lib/api-config"
-import { apiPost } from "@/lib/api-client"
-import { Loader2 } from "lucide-react"
+import { apiGet, apiPost } from "@/lib/api-client"
+import { Loader2, Sparkles, Brain, TrendingUp } from "lucide-react"
+import { sugerirCodigoProducto } from "@/lib/codigo-generator"
+import { calcularPrecioSugeridoSync } from "@/lib/precio-sugerido"
 
 export default function NuevoAgregadoPiedrineraPage() {
   const router = useRouter()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
+  const [productosExistentes, setProductosExistentes] = useState<Array<{ codigo: string }>>([])
 
   const [codigo, setCodigo] = useState<string>("")
   const [nombre, setNombre] = useState<string>("")
@@ -36,6 +39,100 @@ export default function NuevoAgregadoPiedrineraPage() {
   const [proveedor, setProveedor] = useState<string>("")
   const [fechaUltimaEntrada, setFechaUltimaEntrada] = useState<string>("")
   const [activo, setActivo] = useState<boolean>(true)
+  const [precioSugerido, setPrecioSugerido] = useState<number | null>(null)
+  const [mostrarSugerencia, setMostrarSugerencia] = useState(false)
+
+  // Cargar productos existentes para generar códigos únicos
+  useEffect(() => {
+    const loadProductos = async () => {
+      try {
+        const productosData = await apiGet<any>(API_ENDPOINTS.PIEDRINERA.PRODUCTOS).catch(() => ({ results: [], data: [] }))
+        const productosList = Array.isArray(productosData) 
+          ? productosData 
+          : ((productosData as any)?.results || (productosData as any)?.data || [])
+        setProductosExistentes(productosList.map((p: any) => ({ codigo: p.codigo || '' })))
+      } catch (error) {
+        console.error('Error al cargar productos existentes:', error)
+      }
+    }
+    loadProductos()
+  }, [])
+
+  // Función para generar código automático
+  const generarCodigoAutomatico = () => {
+    if (!nombre || !tipo) {
+      toast({
+        title: "Campos requeridos",
+        description: "Por favor, ingresa el nombre y selecciona el tipo para generar el código automático.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const codigoSugerido = sugerirCodigoProducto(
+      'PIEDRINERA',
+      tipo,
+      nombre,
+      productosExistentes
+    )
+
+    setCodigo(codigoSugerido)
+    toast({
+      title: "Código generado",
+      description: `Se ha generado el código: ${codigoSugerido}`,
+    })
+  }
+
+  // Generar código automáticamente cuando cambien nombre o tipo (solo si el campo está vacío)
+  useEffect(() => {
+    if (nombre && tipo && !codigo) {
+      const codigoSugerido = sugerirCodigoProducto(
+        'PIEDRINERA',
+        tipo,
+        nombre,
+        productosExistentes
+      )
+      setCodigo(codigoSugerido)
+    }
+  }, [nombre, tipo, productosExistentes])
+
+  // Función para calcular precio sugerido
+  const calcularPrecioSugerido = () => {
+    if (!costoProduccionPorMetroCubico || costoProduccionPorMetroCubico <= 0) {
+      toast({
+        title: "Costo requerido",
+        description: "Por favor, ingresa un costo de producción válido para calcular el precio sugerido.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const resultado = calcularPrecioSugeridoSync({
+      costoUnitario: costoProduccionPorMetroCubico,
+      tipoModulo: 'PIEDRINERA',
+      categoria: tipo,
+      nombre,
+    })
+
+    setPrecioSugerido(resultado.precio)
+    setMostrarSugerencia(true)
+    
+    toast({
+      title: "Precio Sugerido",
+      description: `Precio sugerido: Q${resultado.precio.toFixed(2)} por m³ (${resultado.porcentajeGanancia}% de ganancia)`,
+    })
+  }
+
+  // Aplicar precio sugerido
+  const aplicarPrecioSugerido = () => {
+    if (precioSugerido) {
+      setPrecioVentaPorMetroCubico(precioSugerido)
+      toast({
+        title: "Precio aplicado",
+        description: `Se ha aplicado el precio sugerido de Q${precioSugerido.toFixed(2)} por m³`,
+      })
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -108,12 +205,25 @@ export default function NuevoAgregadoPiedrineraPage() {
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
             <div className="grid gap-2">
-              <Label htmlFor="codigo">Código *</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="codigo">Código *</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={generarCodigoAutomatico}
+                  disabled={!nombre || !tipo || loading}
+                  className="h-7 text-xs"
+                >
+                  <Sparkles className="mr-1 h-3 w-3" />
+                  Generar automático
+                </Button>
+              </div>
               <Input
                 id="codigo"
                 value={codigo}
                 onChange={(e) => setCodigo(e.target.value)}
-                placeholder="Código único del agregado"
+                placeholder="Código único del agregado (se genera automáticamente)"
                 required
                 disabled={loading}
               />
@@ -164,7 +274,20 @@ export default function NuevoAgregadoPiedrineraPage() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="precioVentaPorMetroCubico">Precio de Venta por m³ (Q) *</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="precioVentaPorMetroCubico">Precio de Venta por m³ (Q) *</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={calcularPrecioSugerido}
+                  disabled={!costoProduccionPorMetroCubico || costoProduccionPorMetroCubico <= 0 || loading}
+                  className="h-7 text-xs"
+                >
+                  <Brain className="mr-1 h-3 w-3" />
+                  Sugerir con IA
+                </Button>
+              </div>
               <Input
                 id="precioVentaPorMetroCubico"
                 type="number"
@@ -175,6 +298,29 @@ export default function NuevoAgregadoPiedrineraPage() {
                 required
                 disabled={loading}
               />
+              {mostrarSugerencia && precioSugerido && (
+                <div className="flex items-center justify-between p-2 bg-muted rounded-md border border-primary/20">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    <div className="text-sm">
+                      <span className="font-medium">Sugerido: Q{precioSugerido.toFixed(2)}/m³</span>
+                      <span className="text-muted-foreground ml-2">
+                        (Ganancia: Q{(precioSugerido - costoProduccionPorMetroCubico).toFixed(2)}/m³)
+                      </span>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={aplicarPrecioSugerido}
+                    className="h-7 text-xs"
+                    disabled={loading}
+                  >
+                    Aplicar
+                  </Button>
+                </div>
+              )}
             </div>
             <div className="grid gap-2">
               <Label htmlFor="costoProduccionPorMetroCubico">Costo de Producción por m³ (Q) *</Label>

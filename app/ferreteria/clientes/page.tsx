@@ -71,7 +71,6 @@ import { useToast } from "@/hooks/use-toast"
 import type { ClienteFerreteria } from "@/types/database"
 import { Loader2, AlertCircle } from "lucide-react"
 
-const ITEMS_PER_PAGE = 5
 
 interface ClientesStats {
   total_clientes?: number
@@ -93,6 +92,11 @@ export default function ClientesFerreteriaPage() {
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
+  const [pagination, setPagination] = useState<PaginationInfo>({
+    count: 0,
+    next: null,
+    previous: null,
+  })
   const [filters, setFilters] = useState({
     periodoRegistro: "todos",
     tieneCompras: "todos",
@@ -110,14 +114,14 @@ export default function ClientesFerreteriaPage() {
         setLoading(true)
         setError(null)
 
-        // Construir query params para filtros
+        // Construir query params para filtros y paginación
         const params = new URLSearchParams()
         if (searchTerm) params.append('search', searchTerm)
+        // Agregar parámetro de página
+        params.append('page', String(currentPage))
 
         const queryString = params.toString()
-        const clientesUrl = queryString 
-          ? `${API_ENDPOINTS.FERRETERIA.CLIENTES}?${queryString}`
-          : API_ENDPOINTS.FERRETERIA.CLIENTES
+        const clientesUrl = `${API_ENDPOINTS.FERRETERIA.CLIENTES}?${queryString}`
 
         // Cargar clientes y estadísticas en paralelo
         // Las estadísticas pueden no estar disponibles aún, así que las manejamos silenciosamente
@@ -143,22 +147,65 @@ export default function ClientesFerreteriaPage() {
           })(),
         ])
 
-        // Procesar clientes
+        // Procesar clientes y paginación
         let clientesData: ClienteFerreteria[] = []
+        let paginationInfo: PaginationInfo = {
+          count: 0,
+          next: null,
+          previous: null,
+        }
+
         if (clientesResult.status === 'fulfilled') {
           const clientesResponse = clientesResult.value
           if (Array.isArray(clientesResponse)) {
             clientesData = clientesResponse
+            paginationInfo.count = clientesResponse.length
           } else if (clientesResponse && Array.isArray(clientesResponse.results)) {
+            // Respuesta paginada de DRF
             clientesData = clientesResponse.results
+            paginationInfo = {
+              count: clientesResponse.count || 0,
+              next: clientesResponse.next || null,
+              previous: clientesResponse.previous || null,
+            }
           } else if (clientesResponse && clientesResponse.data && Array.isArray(clientesResponse.data)) {
             clientesData = clientesResponse.data
+            paginationInfo.count = clientesResponse.count || clientesResponse.data.length
           }
           
-          // Normalizar campos para compatibilidad
-          clientesData = clientesData.map(cliente => ({
-            ...cliente,
-            fechaRegistro: cliente.fecha_registro || cliente.fechaRegistro,
+          // Normalizar campos para compatibilidad (mapear snake_case a camelCase)
+          clientesData = clientesData.map((cliente: any) => ({
+            id: cliente.id,
+            nombre: cliente.nombre || '',
+            nit: cliente.nit || null,
+            direccion: cliente.direccion || null,
+            telefono: cliente.telefono || null,
+            email: cliente.email || null,
+            activo: cliente.activo !== undefined ? cliente.activo : true,
+            fecha_registro: cliente.fecha_registro || cliente.fechaRegistro || cliente.created_at || '',
+            created_at: cliente.created_at || cliente.fecha_registro || '',
+            updated_at: cliente.updated_at || '',
+            // Campos de crédito
+            permite_fiado: cliente.permite_fiado ?? cliente.permiteFiado ?? false,
+            permiteFiado: cliente.permite_fiado ?? cliente.permiteFiado ?? false,
+            limite_credito: cliente.limite_credito ?? cliente.limiteCredito ?? 0,
+            limiteCredito: cliente.limite_credito ?? cliente.limiteCredito ?? 0,
+            saldo_actual: cliente.saldo_actual ?? cliente.saldoActual ?? 0,
+            saldoActual: cliente.saldo_actual ?? cliente.saldoActual ?? 0,
+            credito_disponible: cliente.credito_disponible ?? cliente.creditoDisponible ?? 0,
+            creditoDisponible: cliente.credito_disponible ?? cliente.creditoDisponible ?? 0,
+            puede_comprar_fiado: cliente.puede_comprar_fiado ?? cliente.puedeComprarFiado ?? false,
+            puedeComprarFiado: cliente.puede_comprar_fiado ?? cliente.puedeComprarFiado ?? false,
+            // Campos adicionales
+            fechaRegistro: cliente.fecha_registro || cliente.fechaRegistro || cliente.created_at || '',
+            // Estadísticas opcionales
+            numero_facturas: cliente.numero_facturas ?? 0,
+            total_compras: cliente.total_compras ?? 0,
+            numero_cotizaciones: cliente.numero_cotizaciones ?? 0,
+            ultimaCompra: cliente.ultimaCompra || null,
+            deudaPendiente: cliente.deudaPendiente ?? cliente.saldo_actual ?? cliente.saldoActual ?? 0,
+            numeroVentasPendientes: cliente.numeroVentasPendientes ?? 0,
+            ventasPendientes: cliente.ventasPendientes || [],
           }))
         } else {
           console.error('Error al cargar clientes:', clientesResult.reason)
@@ -174,6 +221,7 @@ export default function ClientesFerreteriaPage() {
         }
 
         setClientes(clientesData)
+        setPagination(paginationInfo)
         setStats(statsData)
       } catch (err) {
         console.error('Error al cargar clientes:', err)
@@ -184,7 +232,7 @@ export default function ClientesFerreteriaPage() {
     }
 
     loadData()
-  }, [searchTerm])
+  }, [searchTerm, currentPage])
 
   // Agregar estadísticas opcionales a los clientes (si vienen del backend)
   // Si no vienen, usamos valores por defecto (0 o null)
@@ -201,33 +249,30 @@ export default function ClientesFerreteriaPage() {
     }))
   }, [clientes])
 
-  // Filtrar clientes
+  // Los clientes ya vienen paginados del backend, pero aplicamos filtros adicionales si es necesario
   const filteredClientes = useMemo(() => {
+    // Si hay filtros del frontend que no se manejan en el backend, aplicarlos aquí
+    // Por ahora, los filtros de período y compras se pueden manejar en el frontend
     return clientesConEstadisticas.filter((cliente) => {
-      // Búsqueda por texto
-      const matchesSearch =
-        cliente.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (cliente.nit && cliente.nit.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (cliente.telefono && cliente.telefono.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (cliente.email && cliente.email.toLowerCase().includes(searchTerm.toLowerCase()))
-
-      // Filtro por período de registro
+      // Filtro por período de registro (si no se maneja en el backend)
       const fechaRegistroStr = cliente.fechaRegistro || cliente.fecha_registro
-      if (!fechaRegistroStr) return false
+      if (!fechaRegistroStr && filters.periodoRegistro !== "todos") return false
       
-      const fechaRegistro = new Date(fechaRegistroStr)
-      const hoy = new Date()
       let matchesPeriodo = true
+      if (filters.periodoRegistro !== "todos" && fechaRegistroStr) {
+        const fechaRegistro = new Date(fechaRegistroStr)
+        const hoy = new Date()
 
-      if (filters.periodoRegistro === "mes") {
-        matchesPeriodo =
-          fechaRegistro.getMonth() === hoy.getMonth() && fechaRegistro.getFullYear() === hoy.getFullYear()
-      } else if (filters.periodoRegistro === "semana") {
-        const semanaAtras = new Date(hoy)
-        semanaAtras.setDate(hoy.getDate() - 7)
-        matchesPeriodo = fechaRegistro >= semanaAtras
-      } else if (filters.periodoRegistro === "año") {
-        matchesPeriodo = fechaRegistro.getFullYear() === hoy.getFullYear()
+        if (filters.periodoRegistro === "mes") {
+          matchesPeriodo =
+            fechaRegistro.getMonth() === hoy.getMonth() && fechaRegistro.getFullYear() === hoy.getFullYear()
+        } else if (filters.periodoRegistro === "semana") {
+          const semanaAtras = new Date(hoy)
+          semanaAtras.setDate(hoy.getDate() - 7)
+          matchesPeriodo = fechaRegistro >= semanaAtras
+        } else if (filters.periodoRegistro === "año") {
+          matchesPeriodo = fechaRegistro.getFullYear() === hoy.getFullYear()
+        }
       }
 
       // Filtro por compras (solo si tenemos estadísticas)
@@ -238,25 +283,44 @@ export default function ClientesFerreteriaPage() {
         matchesCompras = (cliente.numero_facturas ?? 0) === 0
       }
 
-      return matchesSearch && matchesPeriodo && matchesCompras
+      return matchesPeriodo && matchesCompras
     })
-  }, [clientesConEstadisticas, searchTerm, filters])
+  }, [clientesConEstadisticas, filters])
 
-  // Paginación
-  const totalPages = Math.ceil(filteredClientes.length / ITEMS_PER_PAGE)
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
-  const endIndex = startIndex + ITEMS_PER_PAGE
-  const paginatedClientes = filteredClientes.slice(startIndex, endIndex)
+  // Los clientes ya vienen paginados del backend
+  const paginatedClientes = filteredClientes
+  
+  // Calcular información de paginación desde el backend
+  const itemsPerPage = paginatedClientes.length > 0 
+    ? paginatedClientes.length 
+    : (pagination.count > 0 ? 10 : 0)
+  
+  const totalPages = pagination.count > 0 && itemsPerPage > 0
+    ? Math.ceil(pagination.count / itemsPerPage)
+    : (paginatedClientes.length > 0 ? 1 : 0)
+  
+  const startIndex = pagination.count > 0 && itemsPerPage > 0
+    ? (currentPage - 1) * itemsPerPage + 1
+    : 1
+  const endIndex = pagination.count > 0
+    ? Math.min(currentPage * itemsPerPage, pagination.count)
+    : paginatedClientes.length
 
   // Resetear página cuando cambian los filtros
   const handleFilterChange = (key: string, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }))
-    setCurrentPage(1)
+    setCurrentPage(1) // Resetear a la primera página cuando cambian los filtros
   }
 
   const handleSearchChange = (value: string) => {
     setSearchTerm(value)
-    setCurrentPage(1)
+    setCurrentPage(1) // Resetear a la primera página cuando cambia la búsqueda
+  }
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+    // Scroll al inicio de la tabla cuando cambia la página
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const clearFilters = () => {
@@ -646,7 +710,11 @@ export default function ClientesFerreteriaPage() {
             )}
           </div>
           <div className="mb-4 text-sm text-muted-foreground">
-            Mostrando {startIndex + 1}-{Math.min(endIndex, filteredClientes.length)} de {filteredClientes.length} clientes
+            {pagination.count > 0 ? (
+              <>Mostrando {startIndex}-{endIndex} de {pagination.count} clientes</>
+            ) : (
+              <>Mostrando {paginatedClientes.length} cliente{paginatedClientes.length !== 1 ? 's' : ''}</>
+            )}
           </div>
           <Table>
             <TableHeader>
@@ -654,6 +722,7 @@ export default function ClientesFerreteriaPage() {
                 <TableHead>Nombre</TableHead>
                 <TableHead>NIT</TableHead>
                 <TableHead>Contacto</TableHead>
+                <TableHead>Crédito</TableHead>
                 <TableHead>Fecha Registro</TableHead>
                 <TableHead>Estadísticas</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
@@ -679,6 +748,46 @@ export default function ClientesFerreteriaPage() {
                         </div>
                       )}
                       {!cliente.telefono && !cliente.email && <span className="text-sm text-muted-foreground">-</span>}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="space-y-1">
+                      {cliente.permite_fiado || cliente.permiteFiado ? (
+                        <>
+                          <Badge variant="outline" className="text-xs">
+                            Fiado Permitido
+                          </Badge>
+                          <div className="text-xs text-muted-foreground">
+                            Límite: Q{(cliente.limite_credito ?? cliente.limiteCredito ?? 0).toFixed(2)}
+                          </div>
+                          <div className={`text-xs font-medium ${
+                            (cliente.credito_disponible ?? cliente.creditoDisponible ?? 0) > 0 
+                              ? 'text-green-600' 
+                              : 'text-red-600'
+                          }`}>
+                            Disponible: Q{(cliente.credito_disponible ?? cliente.creditoDisponible ?? 0).toFixed(2)}
+                          </div>
+                          {(cliente.saldo_actual ?? cliente.saldoActual ?? 0) > 0 && (
+                            <div className={`text-xs font-medium ${
+                              (cliente.saldo_actual ?? cliente.saldoActual ?? 0) > (cliente.limite_credito ?? cliente.limiteCredito ?? 0)
+                                ? 'text-red-600'
+                                : 'text-orange-600'
+                            }`}>
+                              Saldo: Q{(cliente.saldo_actual ?? cliente.saldoActual ?? 0).toFixed(2)}
+                              {(cliente.saldo_actual ?? cliente.saldoActual ?? 0) > (cliente.limite_credito ?? cliente.limiteCredito ?? 0) && (
+                                <span className="ml-1">⚠️ Excedido</span>
+                              )}
+                            </div>
+                          )}
+                          {!(cliente.puede_comprar_fiado || cliente.puedeComprarFiado) && (
+                            <Badge variant="destructive" className="text-xs mt-1">
+                              Sin crédito disponible
+                            </Badge>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Sin crédito</span>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>{formatDate(cliente.fechaRegistro || cliente.fecha_registro)}</TableCell>
@@ -789,15 +898,15 @@ export default function ClientesFerreteriaPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1}
+                      onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                      disabled={!pagination.previous || currentPage === 1}
                       className="gap-1"
                     >
                       <ChevronLeftIcon className="h-4 w-4" />
                       <span className="hidden sm:block">Anterior</span>
                     </Button>
                   </PaginationItem>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                  {totalPages > 0 && Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
                     if (
                       page === 1 ||
                       page === totalPages ||
@@ -808,7 +917,7 @@ export default function ClientesFerreteriaPage() {
                           <Button
                             variant={currentPage === page ? "outline" : "ghost"}
                             size="sm"
-                            onClick={() => setCurrentPage(page)}
+                            onClick={() => handlePageChange(page)}
                             className={currentPage === page ? "font-semibold" : ""}
                           >
                             {page}
@@ -828,8 +937,8 @@ export default function ClientesFerreteriaPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-                      disabled={currentPage === totalPages}
+                      onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                      disabled={!pagination.next || currentPage === totalPages}
                       className="gap-1"
                     >
                       <span className="hidden sm:block">Siguiente</span>
@@ -895,6 +1004,74 @@ export default function ClientesFerreteriaPage() {
                   <span>{formatDate(selectedCliente.fechaRegistro || selectedCliente.fecha_registro)}</span>
                 </div>
               </div>
+
+              {/* Información de Crédito */}
+              {(selectedCliente.permite_fiado || selectedCliente.permiteFiado) && (
+                <div className={`p-4 rounded-lg border ${
+                  (selectedCliente.saldo_actual ?? selectedCliente.saldoActual ?? 0) > (selectedCliente.limite_credito ?? selectedCliente.limiteCredito ?? 0)
+                    ? 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
+                    : 'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800'
+                }`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <Label className="text-sm font-semibold">Información de Crédito</Label>
+                    {(selectedCliente.saldo_actual ?? selectedCliente.saldoActual ?? 0) > (selectedCliente.limite_credito ?? selectedCliente.limiteCredito ?? 0) && (
+                      <Badge variant="destructive" className="text-xs">
+                        <AlertTriangle className="h-3 w-3 mr-1" />
+                        Límite Excedido
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Límite de Crédito</p>
+                      <p className="text-lg font-semibold text-blue-600">
+                        Q{(selectedCliente.limite_credito ?? selectedCliente.limiteCredito ?? 0).toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Crédito Disponible</p>
+                      <p className={`text-lg font-semibold ${
+                        (selectedCliente.credito_disponible ?? selectedCliente.creditoDisponible ?? 0) > 0
+                          ? 'text-green-600'
+                          : 'text-red-600'
+                      }`}>
+                        Q{(selectedCliente.credito_disponible ?? selectedCliente.creditoDisponible ?? 0).toFixed(2)}
+                      </p>
+                      {(selectedCliente.credito_disponible ?? selectedCliente.creditoDisponible ?? 0) <= 0 && (
+                        <p className="text-xs text-red-600 mt-1">Sin crédito disponible</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Saldo Actual</p>
+                      <p className={`text-lg font-semibold ${
+                        (selectedCliente.saldo_actual ?? selectedCliente.saldoActual ?? 0) > (selectedCliente.limite_credito ?? selectedCliente.limiteCredito ?? 0)
+                          ? 'text-red-600'
+                          : 'text-orange-600'
+                      }`}>
+                        Q{(selectedCliente.saldo_actual ?? selectedCliente.saldoActual ?? 0).toFixed(2)}
+                      </p>
+                      {(selectedCliente.saldo_actual ?? selectedCliente.saldoActual ?? 0) > (selectedCliente.limite_credito ?? selectedCliente.limiteCredito ?? 0) && (
+                        <p className="text-xs text-red-600 mt-1">
+                          Excede límite por Q{((selectedCliente.saldo_actual ?? selectedCliente.saldoActual ?? 0) - (selectedCliente.limite_credito ?? selectedCliente.limiteCredito ?? 0)).toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Puede Comprar Fiado</p>
+                      <Badge variant={selectedCliente.puede_comprar_fiado || selectedCliente.puedeComprarFiado ? "default" : "destructive"} className="mt-1">
+                        {selectedCliente.puede_comprar_fiado || selectedCliente.puedeComprarFiado ? "Sí" : "No"}
+                      </Badge>
+                      {!(selectedCliente.puede_comprar_fiado || selectedCliente.puedeComprarFiado) && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {(selectedCliente.saldo_actual ?? selectedCliente.saldoActual ?? 0) > (selectedCliente.limite_credito ?? selectedCliente.limiteCredito ?? 0)
+                            ? 'Límite excedido'
+                            : 'Sin crédito disponible'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted rounded-lg">
                 <div className="text-center">

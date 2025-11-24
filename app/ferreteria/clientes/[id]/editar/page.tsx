@@ -14,6 +14,7 @@ import type { ClienteFerreteria } from "@/types/database"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { API_ENDPOINTS } from "@/lib/api-config"
 import { apiGet, apiPut } from "@/lib/api-client"
+import { Switch } from "@/components/ui/switch"
 
 interface EditarClientePageProps {
   params: Promise<{
@@ -32,6 +33,8 @@ export default function EditarClientePage({ params }: EditarClientePageProps) {
   const [telefono, setTelefono] = useState<string>("")
   const [email, setEmail] = useState<string>("")
   const [activo, setActivo] = useState<boolean>(true)
+  const [permiteFiado, setPermiteFiado] = useState<boolean>(false)
+  const [limiteCredito, setLimiteCredito] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
@@ -40,7 +43,31 @@ export default function EditarClientePage({ params }: EditarClientePageProps) {
     const loadCliente = async () => {
       try {
         setLoading(true)
-        const clienteData = await apiGet<ClienteFerreteria>(`${API_ENDPOINTS.FERRETERIA.CLIENTES}/${id}`)
+        const clienteRaw = await apiGet<any>(`${API_ENDPOINTS.FERRETERIA.CLIENTES}/${id}`)
+        
+        // Mapear datos del backend (snake_case) al formato del frontend
+        const clienteData: ClienteFerreteria = {
+          id: clienteRaw.id,
+          nombre: clienteRaw.nombre || "",
+          nit: clienteRaw.nit || null,
+          direccion: clienteRaw.direccion || null,
+          telefono: clienteRaw.telefono || null,
+          email: clienteRaw.email || null,
+          activo: clienteRaw.activo !== undefined ? clienteRaw.activo : true,
+          permite_fiado: clienteRaw.permite_fiado ?? clienteRaw.permiteFiado ?? false,
+          permiteFiado: clienteRaw.permite_fiado ?? clienteRaw.permiteFiado ?? false,
+          limite_credito: clienteRaw.limite_credito ?? clienteRaw.limiteCredito ?? 0,
+          limiteCredito: clienteRaw.limite_credito ?? clienteRaw.limiteCredito ?? 0,
+          saldo_actual: clienteRaw.saldo_actual ?? clienteRaw.saldoActual ?? 0,
+          saldoActual: clienteRaw.saldo_actual ?? clienteRaw.saldoActual ?? 0,
+          credito_disponible: clienteRaw.credito_disponible ?? clienteRaw.creditoDisponible ?? 0,
+          creditoDisponible: clienteRaw.credito_disponible ?? clienteRaw.creditoDisponible ?? 0,
+          puede_comprar_fiado: clienteRaw.puede_comprar_fiado ?? clienteRaw.puedeComprarFiado ?? false,
+          puedeComprarFiado: clienteRaw.puede_comprar_fiado ?? clienteRaw.puedeComprarFiado ?? false,
+          fecha_registro: clienteRaw.fecha_registro || clienteRaw.fechaRegistro || clienteRaw.created_at || '',
+          created_at: clienteRaw.created_at || clienteRaw.fecha_registro || '',
+          updated_at: clienteRaw.updated_at || '',
+        }
         
         setNombre(clienteData.nombre || "")
         setNit(clienteData.nit || "")
@@ -48,6 +75,8 @@ export default function EditarClientePage({ params }: EditarClientePageProps) {
         setTelefono(clienteData.telefono || "")
         setEmail(clienteData.email || "")
         setActivo(clienteData.activo !== undefined ? clienteData.activo : true)
+        setPermiteFiado(clienteData.permite_fiado ?? clienteData.permiteFiado ?? false)
+        setLimiteCredito(clienteData.limite_credito ?? clienteData.limiteCredito ?? 0)
       } catch (error: any) {
         console.error("Error al cargar cliente:", error)
         toast({
@@ -86,6 +115,8 @@ export default function EditarClientePage({ params }: EditarClientePageProps) {
         telefono,
         email: email || null,
         activo,
+        permite_fiado: permiteFiado,
+        limite_credito: permiteFiado ? limiteCredito : 0,
       }
 
       await apiPut(`${API_ENDPOINTS.FERRETERIA.CLIENTES}/${id}`, clienteData)
@@ -183,6 +214,39 @@ export default function EditarClientePage({ params }: EditarClientePageProps) {
                 placeholder="Correo electrónico"
               />
             </div>
+            <div className="flex items-center space-x-2">
+              <Switch id="activo" checked={activo} onCheckedChange={setActivo} />
+              <Label htmlFor="activo">Cliente Activo</Label>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Información de Crédito</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="flex items-center space-x-2">
+              <Switch id="permiteFiado" checked={permiteFiado} onCheckedChange={setPermiteFiado} />
+              <Label htmlFor="permiteFiado">Permitir Fiado</Label>
+            </div>
+            {permiteFiado && (
+              <div className="grid gap-2">
+                <Label htmlFor="limiteCredito">Límite de Crédito (Q)</Label>
+                <Input
+                  id="limiteCredito"
+                  type="number"
+                  value={limiteCredito}
+                  onChange={(e) => setLimiteCredito(Number(e.target.value))}
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Monto máximo que el cliente puede comprar a crédito
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

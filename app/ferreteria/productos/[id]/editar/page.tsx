@@ -41,6 +41,7 @@ interface Producto {
   costo_unitario: number
   stock_actual: number
   stock_minimo: number
+  proveedor?: string | null
   activo: boolean
 }
 
@@ -64,6 +65,7 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
   const [unidadMedidaId, setUnidadMedidaId] = useState<string>("")
   const [stockActual, setStockActual] = useState<number>(0)
   const [stockMinimo, setStockMinimo] = useState<number>(0)
+  const [proveedor, setProveedor] = useState<string>("")
   const [activo, setActivo] = useState<boolean>(true)
 
   // Estados para cargar datos desde la API
@@ -71,6 +73,20 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
   const [unidadesMedida, setUnidadesMedida] = useState<UnidadMedida[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+
+  // Lista de proveedores comunes
+  const proveedoresComunes = [
+    "Distribuidora Técnica",
+    "Repuestos Maquinaria",
+    "Autopartes Premium",
+    "Lubricantes Industriales",
+    "Repuestos CAT",
+    "Repuestos JCB",
+    "Volvo Parts",
+    "Ferretería Central",
+    "Distribuidora Nacional",
+    "Importadora de Herramientas",
+  ]
 
   // Cargar producto, categorías y unidades de medida desde Django
   useEffect(() => {
@@ -108,6 +124,7 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
         setUnidadMedidaId(String(productoData.unidad_medida_id || ''))
         setStockActual(productoData.stock_actual || 0)
         setStockMinimo(productoData.stock_minimo || 0)
+        setProveedor(productoData.proveedor || "")
         setActivo(productoData.activo ?? true)
       } catch (err: any) {
         console.error('Error al cargar datos:', err)
@@ -161,6 +178,7 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
         costo_unitario: costoUnitario,
         stock_actual: stockActual,
         stock_minimo: stockMinimo,
+        proveedor: proveedor || null,
         activo,
       }
 
@@ -326,6 +344,21 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
                 min="0"
                 required
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="proveedor">Proveedor</Label>
+              <Input
+                id="proveedor"
+                list="proveedores-list"
+                value={proveedor}
+                onChange={(e) => setProveedor(e.target.value)}
+                placeholder="Selecciona o escribe un proveedor"
+              />
+              <datalist id="proveedores-list">
+                {proveedoresComunes.map((prov) => (
+                  <option key={prov} value={prov} />
+                ))}
+              </datalist>
             </div>
             <div className="flex items-center space-x-2">
               <Switch id="activo" checked={activo} onCheckedChange={setActivo} />

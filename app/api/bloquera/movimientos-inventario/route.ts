@@ -5,7 +5,7 @@ import { extractTokenFromHeader, verifyTokenWithDjango } from '@/lib/verify-toke
 const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
 
 /**
- * GET /api/ferreteria/movimientos-inventario
+ * GET /api/bloquera/movimientos-inventario
  * Obtiene la lista de movimientos de inventario desde Django
  */
 export async function GET(request: NextRequest) {
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     if (page) queryParams.append('page', page)
 
     const queryString = queryParams.toString()
-    const baseUrl = `${DJANGO_API_URL}/api/ferreteria/movimientos-inventario/`
+    const baseUrl = `${DJANGO_API_URL}/api/bloquera/movimientos-inventario/`
     const url = queryString ? `${baseUrl}?${queryString}` : baseUrl
 
     // Hacer proxy a Django
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/ferreteria/movimientos-inventario
+ * POST /api/bloquera/movimientos-inventario
  * Crea un nuevo movimiento de inventario en Django
  */
 export async function POST(request: NextRequest) {
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Hacer proxy a Django
-    const response = await fetch(`${DJANGO_API_URL}/api/ferreteria/movimientos-inventario/`, {
+    const response = await fetch(`${DJANGO_API_URL}/api/bloquera/movimientos-inventario/`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,

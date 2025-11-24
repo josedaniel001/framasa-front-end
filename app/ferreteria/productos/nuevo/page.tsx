@@ -14,7 +14,9 @@ import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { API_ENDPOINTS } from "@/lib/api-config"
 import { apiGet, apiPost } from "@/lib/api-client"
-import { Loader2 } from "lucide-react"
+import { Loader2, Sparkles, Brain, TrendingUp } from "lucide-react"
+import { sugerirCodigoProducto } from "@/lib/codigo-generator"
+import { calcularPrecioSugeridoSync } from "@/lib/precio-sugerido"
 
 interface Categoria {
   id: number
@@ -43,22 +45,41 @@ export default function NuevoProductoPage() {
   const [unidadMedidaId, setUnidadMedidaId] = useState<string>("")
   const [stockActual, setStockActual] = useState<number>(0)
   const [stockMinimo, setStockMinimo] = useState<number>(0)
+  const [proveedor, setProveedor] = useState<string>("")
   const [activo, setActivo] = useState<boolean>(true)
   const [submitting, setSubmitting] = useState<boolean>(false)
+  const [precioSugerido, setPrecioSugerido] = useState<number | null>(null)
+  const [mostrarSugerencia, setMostrarSugerencia] = useState(false)
 
   // Estados para cargar datos desde la API
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [unidadesMedida, setUnidadesMedida] = useState<UnidadMedida[]>([])
+  const [productosExistentes, setProductosExistentes] = useState<Array<{ codigo: string }>>([])
   const [loading, setLoading] = useState(true)
 
-  // Cargar categorías y unidades de medida desde Django
+  // Lista de proveedores comunes (se puede expandir o cargar desde API)
+  const proveedoresComunes = [
+    "Distribuidora Técnica",
+    "Repuestos Maquinaria",
+    "Autopartes Premium",
+    "Lubricantes Industriales",
+    "Repuestos CAT",
+    "Repuestos JCB",
+    "Volvo Parts",
+    "Ferretería Central",
+    "Distribuidora Nacional",
+    "Importadora de Herramientas",
+  ]
+
+  // Cargar categorías, unidades de medida y productos existentes desde Django
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true)
-        const [categoriasData, unidadesData] = await Promise.all([
+        const [categoriasData, unidadesData, productosData] = await Promise.all([
           apiGet<Categoria[]>(API_ENDPOINTS.FERRETERIA.CATEGORIAS),
           apiGet<UnidadMedida[]>(API_ENDPOINTS.FERRETERIA.UNIDADES_MEDIDA),
+          apiGet<any>(API_ENDPOINTS.FERRETERIA.PRODUCTOS).catch(() => ({ results: [], data: [] })),
         ])
 
         // Manejar respuesta paginada o directa
@@ -69,9 +90,14 @@ export default function NuevoProductoPage() {
         const unidadesList = Array.isArray(unidadesData) 
           ? unidadesData 
           : ((unidadesData as any)?.results || (unidadesData as any)?.data || [])
+        
+        const productosList = Array.isArray(productosData) 
+          ? productosData 
+          : ((productosData as any)?.results || (productosData as any)?.data || [])
 
         setCategorias(categoriasList)
         setUnidadesMedida(unidadesList)
+        setProductosExistentes(productosList.map((p: any) => ({ codigo: p.codigo || '' })))
       } catch (err) {
         console.error('Error al cargar categorías y unidades:', err)
         toast({
@@ -86,6 +112,89 @@ export default function NuevoProductoPage() {
 
     loadData()
   }, [toast])
+
+  // Función para generar código automático
+  const generarCodigoAutomatico = () => {
+    if (!nombre || !categoriaId) {
+      toast({
+        title: "Campos requeridos",
+        description: "Por favor, ingresa el nombre y selecciona una categoría para generar el código automático.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const categoria = categorias.find(c => String(c.id) === categoriaId)
+    if (!categoria) return
+
+    const codigoSugerido = sugerirCodigoProducto(
+      'FERRETERIA',
+      categoria.nombre,
+      nombre,
+      productosExistentes
+    )
+
+    setCodigo(codigoSugerido)
+    toast({
+      title: "Código generado",
+      description: `Se ha generado el código: ${codigoSugerido}`,
+    })
+  }
+
+  // Generar código automáticamente cuando cambien nombre o categoría (solo si el campo está vacío)
+  useEffect(() => {
+    if (nombre && categoriaId && !codigo) {
+      const categoria = categorias.find(c => String(c.id) === categoriaId)
+      if (categoria) {
+        const codigoSugerido = sugerirCodigoProducto(
+          'FERRETERIA',
+          categoria.nombre,
+          nombre,
+          productosExistentes
+        )
+        setCodigo(codigoSugerido)
+      }
+    }
+  }, [nombre, categoriaId, categorias, productosExistentes])
+
+  // Función para calcular precio sugerido
+  const calcularPrecioSugerido = () => {
+    if (!costoUnitario || costoUnitario <= 0) {
+      toast({
+        title: "Costo requerido",
+        description: "Por favor, ingresa un costo unitario válido para calcular el precio sugerido.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const categoria = categorias.find(c => String(c.id) === categoriaId)
+    const resultado = calcularPrecioSugeridoSync({
+      costoUnitario,
+      tipoModulo: 'FERRETERIA',
+      categoria: categoria?.nombre,
+      nombre,
+    })
+
+    setPrecioSugerido(resultado.precio)
+    setMostrarSugerencia(true)
+    
+    toast({
+      title: "Precio Sugerido",
+      description: `Precio sugerido: Q${resultado.precio.toFixed(2)} (${resultado.porcentajeGanancia}% de ganancia)`,
+    })
+  }
+
+  // Aplicar precio sugerido
+  const aplicarPrecioSugerido = () => {
+    if (precioSugerido) {
+      setPrecioVenta(precioSugerido)
+      toast({
+        title: "Precio aplicado",
+        description: `Se ha aplicado el precio sugerido de Q${precioSugerido.toFixed(2)}`,
+      })
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -109,6 +218,7 @@ export default function NuevoProductoPage() {
       costo_unitario: costoUnitario,
       stock_actual: stockActual,
       stock_minimo: stockMinimo,
+      proveedor: proveedor || null,
       activo,
     }
 
@@ -157,12 +267,25 @@ export default function NuevoProductoPage() {
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
             <div className="grid gap-2">
-              <Label htmlFor="codigo">Código</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="codigo">Código</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={generarCodigoAutomatico}
+                  disabled={!nombre || !categoriaId || loading}
+                  className="h-7 text-xs"
+                >
+                  <Sparkles className="mr-1 h-3 w-3" />
+                  Generar automático
+                </Button>
+              </div>
               <Input
                 id="codigo"
                 value={codigo}
                 onChange={(e) => setCodigo(e.target.value)}
-                placeholder="Código único del producto"
+                placeholder="Código único del producto (se genera automáticamente)"
                 required
               />
             </div>
@@ -234,7 +357,20 @@ export default function NuevoProductoPage() {
               )}
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="precioVenta">Precio de Venta (Q)</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="precioVenta">Precio de Venta (Q)</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={calcularPrecioSugerido}
+                  disabled={!costoUnitario || costoUnitario <= 0 || loading}
+                  className="h-7 text-xs"
+                >
+                  <Brain className="mr-1 h-3 w-3" />
+                  Sugerir con IA
+                </Button>
+              </div>
               <Input
                 id="precioVenta"
                 type="number"
@@ -244,6 +380,28 @@ export default function NuevoProductoPage() {
                 min="0"
                 required
               />
+              {mostrarSugerencia && precioSugerido && (
+                <div className="flex items-center justify-between p-2 bg-muted rounded-md border border-primary/20">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    <div className="text-sm">
+                      <span className="font-medium">Sugerido: Q{precioSugerido.toFixed(2)}</span>
+                      <span className="text-muted-foreground ml-2">
+                        (Ganancia: Q{(precioSugerido - costoUnitario).toFixed(2)})
+                      </span>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={aplicarPrecioSugerido}
+                    className="h-7 text-xs"
+                  >
+                    Aplicar
+                  </Button>
+                </div>
+              )}
             </div>
             <div className="grid gap-2">
               <Label htmlFor="costoUnitario">Costo Unitario (Q)</Label>
@@ -278,6 +436,21 @@ export default function NuevoProductoPage() {
                 min="0"
                 required
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="proveedor">Proveedor</Label>
+              <Input
+                id="proveedor"
+                list="proveedores-list"
+                value={proveedor}
+                onChange={(e) => setProveedor(e.target.value)}
+                placeholder="Selecciona o escribe un proveedor"
+              />
+              <datalist id="proveedores-list">
+                {proveedoresComunes.map((prov) => (
+                  <option key={prov} value={prov} />
+                ))}
+              </datalist>
             </div>
             <div className="flex items-center space-x-2">
               <Switch id="activo" checked={activo} onCheckedChange={setActivo} />

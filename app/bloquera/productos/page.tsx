@@ -66,6 +66,7 @@ export default function ProductosBloqueraPage() {
   const [productos, setProductos] = useState<ProductoBloquera[]>([])
   const [stats, setStats] = useState<ProductosStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
@@ -74,21 +75,17 @@ export default function ProductosBloqueraPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [openDropdownId, setOpenDropdownId] = useState<number | string | null>(null)
 
-  // Cargar datos desde la API
-  useEffect(() => {
-    const loadData = async () => {
+  const loadData = useCallback(
+    async (showFullLoader = false) => {
       try {
-        setLoading(true)
+        if (showFullLoader) {
+          setLoading(true)
+        } else {
+          setIsRefreshing(true)
+        }
         setError(null)
 
-        // Construir query params para filtros
-        const params = new URLSearchParams()
-        if (searchTerm) params.append('search', searchTerm)
-
-        const queryString = params.toString()
-        const productosUrl = queryString 
-          ? `${API_ENDPOINTS.BLOQUERA.PRODUCTOS}?${queryString}`
-          : API_ENDPOINTS.BLOQUERA.PRODUCTOS
+        const productosUrl = API_ENDPOINTS.BLOQUERA.PRODUCTOS
 
         // Cargar productos y estadísticas en paralelo
         const [productosResult, statsResult] = await Promise.allSettled([
@@ -108,7 +105,7 @@ export default function ProductosBloqueraPage() {
 
         // Procesar productos
         let productosData: ProductoBloquera[] = []
-        if (productosResult.status === 'fulfilled') {
+        if (productosResult.status === "fulfilled") {
           const productosResponse = productosResult.value
           if (Array.isArray(productosResponse)) {
             productosData = productosResponse
@@ -118,28 +115,35 @@ export default function ProductosBloqueraPage() {
             productosData = productosResponse.data
           }
         } else {
-          console.error('Error al cargar productos:', productosResult.reason)
+          console.error("Error al cargar productos:", productosResult.reason)
           throw productosResult.reason
         }
 
         // Procesar estadísticas
         let statsData: ProductosStats | null = null
-        if (statsResult.status === 'fulfilled' && statsResult.value) {
+        if (statsResult.status === "fulfilled" && statsResult.value) {
           statsData = statsResult.value
         }
 
         setProductos(productosData)
         setStats(statsData)
       } catch (err) {
-        console.error('Error al cargar productos:', err)
-        setError('Error al cargar los productos. Por favor, intenta de nuevo.')
+        console.error("Error al cargar productos:", err)
+        setError("Error al cargar los productos. Por favor, intenta de nuevo.")
       } finally {
-        setLoading(false)
+        if (showFullLoader) {
+          setLoading(false)
+        } else {
+          setIsRefreshing(false)
+        }
       }
-    }
+    },
+    []
+  )
 
-    loadData()
-  }, [searchTerm])
+  useEffect(() => {
+    loadData(true)
+  }, [loadData])
 
   // Filtrar productos
   const filteredProductos = useMemo(() => {
@@ -163,6 +167,11 @@ export default function ProductosBloqueraPage() {
   const handleSearchChange = (value: string) => {
     setSearchTerm(value)
     setCurrentPage(1)
+  }
+
+  const handleManualRefresh = () => {
+    if (isRefreshing) return
+    loadData(false)
   }
 
   const handleDeleteProducto = useCallback((producto: ProductoBloquera) => {
@@ -266,8 +275,17 @@ export default function ProductosBloqueraPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Productos (Bloquera)</h1>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => window.location.reload()}>
-            <RefreshCw className="mr-2 h-4 w-4" /> Actualizar
+          <Button variant="outline" onClick={handleManualRefresh} disabled={isRefreshing}>
+            {isRefreshing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Actualizando...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" /> Actualizar
+              </>
+            )}
           </Button>
           <Link href="/bloquera/productos/nuevo">
             <Button>

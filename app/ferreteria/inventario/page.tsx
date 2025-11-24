@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { PlusCircle, Search, ArrowUpCircle, ArrowDownCircle, Package, DollarSign, Filter, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon, Eye, Download, RefreshCw, Loader2, AlertCircle } from "lucide-react"
+import { PlusCircle, Search, ArrowUpCircle, ArrowDownCircle, Package, DollarSign, Filter, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon, Eye, Download, RefreshCw, Loader2, AlertCircle, Calendar, TrendingUp, TrendingDown } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -66,6 +66,8 @@ export default function InventarioFerreteriaPage() {
     estado: "todos",
     categoria: "todas",
     tipoMovimiento: "todos",
+    fechaDesde: "",
+    fechaHasta: "",
   })
 
   // Cargar datos desde la API
@@ -85,12 +87,18 @@ export default function InventarioFerreteriaPage() {
           ? `${API_ENDPOINTS.FERRETERIA.PRODUCTOS}?${queryString}`
           : API_ENDPOINTS.FERRETERIA.PRODUCTOS
 
-        // Parámetros para movimientos
+        // Parámetros para movimientos (según documentación API)
         const movParams = new URLSearchParams()
         if (filters.tipoMovimiento !== 'todos') {
-          movParams.append('tipo_ajuste', filters.tipoMovimiento)
+          movParams.append('tipo', filters.tipoMovimiento)
         }
-        movParams.append('limit', '50') // Obtener los últimos 50 movimientos
+        if (filters.fechaDesde) {
+          movParams.append('fecha_desde', filters.fechaDesde)
+        }
+        if (filters.fechaHasta) {
+          movParams.append('fecha_hasta', filters.fechaHasta)
+        }
+        movParams.append('page', movimientosPage.toString())
         const movimientosUrl = `${API_ENDPOINTS.FERRETERIA.MOVIMIENTOS_INVENTARIO}?${movParams.toString()}`
 
         // Cargar productos y movimientos en paralelo
@@ -126,6 +134,33 @@ export default function InventarioFerreteriaPage() {
           } else if (movimientosResponse && movimientosResponse.data && Array.isArray(movimientosResponse.data)) {
             movimientosData = movimientosResponse.data
           }
+
+          // Mapear datos del backend al formato del frontend
+          movimientosData = movimientosData.map((mov: any) => ({
+            id: mov.id,
+            producto_id: mov.producto_id || mov.producto?.id,
+            producto: mov.producto,
+            tipo: mov.tipo || mov.tipo_ajuste || 'ENTRADA',
+            tipoDisplay: mov.tipoDisplay || mov.tipo || mov.tipo_ajuste,
+            cantidad: mov.cantidad,
+            stockAnterior: mov.stockAnterior || mov.stock_anterior,
+            stock_anterior: mov.stock_anterior || mov.stockAnterior,
+            stockNuevo: mov.stockNuevo || mov.stock_nuevo,
+            stock_nuevo: mov.stock_nuevo || mov.stockNuevo,
+            motivo: mov.motivo || mov.razon,
+            observaciones: mov.observaciones || mov.referencia,
+            usuario_id: mov.usuario_id || mov.usuario?.id,
+            usuario: mov.usuario,
+            fechaMovimiento: mov.fechaMovimiento || mov.fecha_movimiento || mov.fecha_creacion || mov.created_at,
+            fecha_movimiento: mov.fecha_movimiento || mov.fechaMovimiento || mov.fecha_creacion || mov.created_at,
+            fecha_creacion: mov.fecha_creacion || mov.created_at || mov.fechaMovimiento || mov.fecha_movimiento,
+            created_at: mov.created_at || mov.fecha_creacion,
+            updated_at: mov.updated_at,
+            // Campos legacy
+            tipo_ajuste: mov.tipo_ajuste || mov.tipo,
+            razon: mov.razon || mov.motivo,
+            referencia: mov.referencia || mov.observaciones,
+          }))
         } else {
           console.warn('Error al cargar movimientos (continuando sin ellos):', movimientosResult.reason)
         }
@@ -134,16 +169,17 @@ export default function InventarioFerreteriaPage() {
         const hoy = new Date()
         hoy.setHours(0, 0, 0, 0)
         const movimientosHoy = movimientosData.filter(mov => {
-          const fechaMov = new Date(mov.fecha_creacion)
+          const fechaMov = new Date(mov.fecha_creacion || mov.fecha_movimiento || mov.fechaMovimiento || mov.created_at || '')
           fechaMov.setHours(0, 0, 0, 0)
           return fechaMov.getTime() === hoy.getTime()
         })
 
+        const tipoMov = (m: MovimientoInventario) => m.tipo || m.tipo_ajuste || 'ENTRADA'
         const statsData: MovimientosStats = {
           total_movimientos: movimientosData.length,
           movimientos_hoy: movimientosHoy.length,
-          entradas_total: movimientosData.filter(m => m.tipo_ajuste === 'ENTRADA').reduce((sum, m) => sum + m.cantidad, 0),
-          salidas_total: movimientosData.filter(m => m.tipo_ajuste === 'SALIDA').reduce((sum, m) => sum + m.cantidad, 0),
+          entradas_total: movimientosData.filter(m => tipoMov(m) === 'ENTRADA' || tipoMov(m) === 'DEVOLUCION').reduce((sum, m) => sum + Math.abs(m.cantidad), 0),
+          salidas_total: movimientosData.filter(m => tipoMov(m) === 'SALIDA' || tipoMov(m) === 'TRANSFERENCIA').reduce((sum, m) => sum + Math.abs(m.cantidad), 0),
         }
 
         setProductos(productosData)
@@ -158,7 +194,7 @@ export default function InventarioFerreteriaPage() {
     }
 
     loadData()
-  }, [searchTerm, filters.categoria, filters.tipoMovimiento])
+  }, [searchTerm, filters.categoria, filters.tipoMovimiento, filters.fechaDesde, filters.fechaHasta])
 
   // Obtener categorías únicas
   const categorias = useMemo(() => {
@@ -193,13 +229,16 @@ export default function InventarioFerreteriaPage() {
     let filtered = movimientos
 
     if (filters.tipoMovimiento !== 'todos') {
-      filtered = filtered.filter(m => m.tipo_ajuste === filters.tipoMovimiento)
+      filtered = filtered.filter(m => {
+        const tipo = m.tipo || m.tipo_ajuste
+        return tipo === filters.tipoMovimiento
+      })
     }
 
     // Ordenar por fecha más reciente
     return filtered.sort((a, b) => {
-      const fechaA = new Date(a.fecha_creacion).getTime()
-      const fechaB = new Date(b.fecha_creacion).getTime()
+      const fechaA = new Date(a.fecha_creacion || a.fecha_movimiento || a.fechaMovimiento || a.created_at || '').getTime()
+      const fechaB = new Date(b.fecha_creacion || b.fecha_movimiento || b.fechaMovimiento || b.created_at || '').getTime()
       return fechaB - fechaA
     })
   }, [movimientos, filters.tipoMovimiento])
@@ -229,14 +268,18 @@ export default function InventarioFerreteriaPage() {
   }
 
   const clearFilters = () => {
-    setFilters({ estado: "todos", categoria: "todas", tipoMovimiento: "todos" })
+    setFilters({ estado: "todos", categoria: "todas", tipoMovimiento: "todos", fechaDesde: "", fechaHasta: "" })
     setSearchTerm("")
     setCurrentPage(1)
     setMovimientosPage(1)
   }
 
   const hasActiveFilters =
-    filters.estado !== "todos" || filters.categoria !== "todas" || filters.tipoMovimiento !== "todos"
+    filters.estado !== "todos" || 
+    filters.categoria !== "todas" || 
+    filters.tipoMovimiento !== "todos" ||
+    filters.fechaDesde !== "" ||
+    filters.fechaHasta !== ""
 
   // Calcular estadísticas
   const totalProductos = productos.filter(p => p.activo).length
@@ -251,8 +294,12 @@ export default function InventarioFerreteriaPage() {
         return <Badge variant="default" className="bg-green-500">Entrada</Badge>
       case "SALIDA":
         return <Badge variant="destructive">Salida</Badge>
-      case "CORRECCION":
-        return <Badge variant="secondary">Corrección</Badge>
+      case "AJUSTE":
+        return <Badge variant="secondary">Ajuste</Badge>
+      case "TRANSFERENCIA":
+        return <Badge variant="outline" className="bg-blue-500 text-white">Transferencia</Badge>
+      case "DEVOLUCION":
+        return <Badge variant="outline" className="bg-purple-500 text-white">Devolución</Badge>
       default:
         return <Badge variant="outline">{tipo}</Badge>
     }
@@ -474,17 +521,47 @@ export default function InventarioFerreteriaPage() {
                     </button>
                   </Badge>
                 )}
-                {filters.categoria !== "todas" && (
-                  <Badge variant="secondary" className="gap-1">
-                    Categoría: {filters.categoria}
-                    <button
-                      onClick={() => handleFilterChange("categoria", "todas")}
-                      className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                )}
+                    {filters.categoria !== "todas" && (
+                      <Badge variant="secondary" className="gap-1">
+                        Categoría: {filters.categoria}
+                        <button
+                          onClick={() => handleFilterChange("categoria", "todas")}
+                          className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    )}
+                    {filters.tipoMovimiento !== "todos" && (
+                      <Badge variant="secondary" className="gap-1">
+                        Movimiento: {filters.tipoMovimiento}
+                        <button
+                          onClick={() => handleFilterChange("tipoMovimiento", "todos")}
+                          className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    )}
+                    {(filters.fechaDesde || filters.fechaHasta) && (
+                      <Badge variant="secondary" className="gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {filters.fechaDesde && filters.fechaHasta 
+                          ? `${filters.fechaDesde} - ${filters.fechaHasta}`
+                          : filters.fechaDesde 
+                          ? `Desde: ${filters.fechaDesde}`
+                          : `Hasta: ${filters.fechaHasta}`}
+                        <button
+                          onClick={() => {
+                            handleFilterChange("fechaDesde", "")
+                            handleFilterChange("fechaHasta", "")
+                          }}
+                          className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    )}
               </div>
             )}
           </div>
@@ -615,12 +692,14 @@ export default function InventarioFerreteriaPage() {
               <SelectTrigger className="w-[180px]">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos los tipos</SelectItem>
-                <SelectItem value="ENTRADA">Entradas</SelectItem>
-                <SelectItem value="SALIDA">Salidas</SelectItem>
-                <SelectItem value="CORRECCION">Correcciones</SelectItem>
-              </SelectContent>
+                          <SelectContent>
+                            <SelectItem value="todos">Todos los tipos</SelectItem>
+                            <SelectItem value="ENTRADA">Entradas</SelectItem>
+                            <SelectItem value="SALIDA">Salidas</SelectItem>
+                            <SelectItem value="AJUSTE">Ajustes</SelectItem>
+                            <SelectItem value="TRANSFERENCIA">Transferencias</SelectItem>
+                            <SelectItem value="DEVOLUCION">Devoluciones</SelectItem>
+                          </SelectContent>
             </Select>
           </div>
         </CardHeader>
@@ -645,21 +724,21 @@ export default function InventarioFerreteriaPage() {
                 <TableBody>
                   {paginatedMovimientos.map((movimiento) => (
                     <TableRow key={movimiento.id}>
-                      <TableCell>{formatDate(movimiento.fecha_creacion)}</TableCell>
+                      <TableCell>{formatDate(movimiento.fecha_creacion || movimiento.fecha_movimiento || movimiento.fechaMovimiento || movimiento.created_at || '')}</TableCell>
                       <TableCell>
                         {movimiento.producto?.nombre || `Producto #${movimiento.producto_id}`}
                         {movimiento.producto?.codigo && (
                           <span className="text-xs text-muted-foreground ml-1">({movimiento.producto.codigo})</span>
                         )}
                       </TableCell>
-                      <TableCell>{getTipoMovimientoBadge(movimiento.tipo_ajuste)}</TableCell>
-                      <TableCell>{movimiento.cantidad}</TableCell>
-                      <TableCell>{movimiento.stock_anterior}</TableCell>
-                      <TableCell className="font-medium">{movimiento.stock_nuevo}</TableCell>
-                      <TableCell className="max-w-xs truncate" title={movimiento.razon}>
-                        {movimiento.razon}
+                      <TableCell>{getTipoMovimientoBadge(movimiento.tipo || movimiento.tipo_ajuste || 'ENTRADA')}</TableCell>
+                      <TableCell>{Math.abs(movimiento.cantidad)}</TableCell>
+                      <TableCell>{movimiento.stock_anterior || movimiento.stockAnterior || '-'}</TableCell>
+                      <TableCell className="font-medium">{movimiento.stock_nuevo || movimiento.stockNuevo || '-'}</TableCell>
+                      <TableCell className="max-w-xs truncate" title={movimiento.motivo || movimiento.razon || ''}>
+                        {movimiento.motivo || movimiento.razon || '-'}
                       </TableCell>
-                      <TableCell>{movimiento.referencia || "-"}</TableCell>
+                      <TableCell>{movimiento.observaciones || movimiento.referencia || "-"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

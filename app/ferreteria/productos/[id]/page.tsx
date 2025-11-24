@@ -29,6 +29,7 @@ interface ProductoFerreteria {
   unidadMedida: string
   stockActual: number
   stockMinimo: number
+  proveedor?: string
   activo: boolean
   fechaCreacion: string
   ultimaActualizacion: string
@@ -46,7 +47,26 @@ export default function VerProductoPage({ params }: VerProductoPageProps) {
     const loadProducto = async () => {
       try {
         setLoading(true)
-        const productoData = await apiGet<ProductoFerreteria>(`${API_ENDPOINTS.FERRETERIA.PRODUCTOS}/${id}`)
+        const productoRaw = await apiGet<any>(`${API_ENDPOINTS.FERRETERIA.PRODUCTOS}/${id}`)
+        
+        // Mapear datos del backend (snake_case) al formato del frontend (camelCase)
+        const productoData: ProductoFerreteria = {
+          id: String(productoRaw.id || productoRaw.pk || ''),
+          codigo: productoRaw.codigo || '',
+          nombre: productoRaw.nombre || '',
+          descripcion: productoRaw.descripcion || '',
+          categoria: productoRaw.categoria || productoRaw.categoria_nombre || productoRaw.categoria?.nombre || '',
+          precioVenta: productoRaw.precio_venta || productoRaw.precioVenta || 0,
+          costoUnitario: productoRaw.costo_unitario || productoRaw.costoUnitario || 0,
+          unidadMedida: productoRaw.unidad_medida || productoRaw.unidad_medida_nombre || productoRaw.unidad_medida?.nombre || productoRaw.unidadMedida || '',
+          stockActual: productoRaw.stock_actual || productoRaw.stockActual || 0,
+          stockMinimo: productoRaw.stock_minimo || productoRaw.stockMinimo || 0,
+          proveedor: productoRaw.proveedor || null,
+          activo: productoRaw.activo !== undefined ? productoRaw.activo : true,
+          fechaCreacion: productoRaw.fecha_creacion || productoRaw.fechaCreacion || productoRaw.created_at || new Date().toISOString(),
+          ultimaActualizacion: productoRaw.ultima_actualizacion || productoRaw.ultimaActualizacion || productoRaw.updated_at || new Date().toISOString(),
+        }
+        
         setProducto(productoData)
       } catch (error: any) {
         console.error('Error al cargar producto:', error)
@@ -182,6 +202,10 @@ export default function VerProductoPage({ params }: VerProductoPageProps) {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Unidad de Medida</p>
                 <p className="text-base font-semibold capitalize">{producto.unidadMedida}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Proveedor</p>
+                <p className="text-base font-semibold">{producto.proveedor || "No especificado"}</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Estado</p>

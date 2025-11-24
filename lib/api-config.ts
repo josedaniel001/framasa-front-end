@@ -58,6 +58,9 @@ export const API_ENDPOINTS = {
       return nextApiEndpoint('/api/bloquera/productos')
     },
     PRODUCTOS_STATS: `${DJANGO_API_BASE}/api/bloquera/productos/stats/`,
+    get MOVIMIENTOS_INVENTARIO() {
+      return nextApiEndpoint('/api/bloquera/movimientos-inventario')
+    },
   },
   PIEDRINERA: {
     get PRODUCTOS() {
@@ -66,6 +69,9 @@ export const API_ENDPOINTS = {
     PRODUCTOS_STATS: `${DJANGO_API_BASE}/api/piedrinera/productos/stats/`,
     get CAMIONES() {
       return nextApiEndpoint('/api/piedrinera/camiones')
+    },
+    get MOVIMIENTOS_INVENTARIO() {
+      return nextApiEndpoint('/api/piedrinera/movimientos-inventario')
     },
   },
   PLANILLAS: {

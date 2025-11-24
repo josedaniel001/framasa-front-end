@@ -128,6 +128,17 @@ export interface ClienteFerreteria {
   fecha_registro: string
   created_at: string
   updated_at: string
+  // Campos de crédito
+  permite_fiado?: boolean
+  permiteFiado?: boolean
+  limite_credito?: number
+  limiteCredito?: number
+  saldo_actual?: number
+  saldoActual?: number
+  credito_disponible?: number
+  creditoDisponible?: number
+  puede_comprar_fiado?: boolean
+  puedeComprarFiado?: boolean
   // Campos adicionales para compatibilidad con el frontend
   fechaRegistro?: string
   // Estadísticas opcionales (pueden venir del backend o calcularse)
@@ -238,20 +249,32 @@ export interface MovimientoInventario {
     descripcion?: string
     categoria?: string
   }
-  tipo_ajuste: "ENTRADA" | "SALIDA" | "CORRECCION"
+  tipo: "ENTRADA" | "SALIDA" | "AJUSTE" | "TRANSFERENCIA" | "DEVOLUCION"
+  tipoDisplay?: string
   cantidad: number
-  stock_anterior: number
-  stock_nuevo: number
-  razon: string
-  referencia?: string | null
+  stockAnterior?: number
+  stock_anterior?: number
+  stockNuevo?: number
+  stock_nuevo?: number
+  motivo?: string
+  observaciones?: string
   usuario_id?: number | null
   usuario?: {
     id: number
-    username: string
+    nombre?: string
+    username?: string
     first_name?: string
     last_name?: string
   }
-  fecha_creacion: string
+  fechaMovimiento?: string
+  fecha_movimiento?: string
+  fecha_creacion?: string
+  created_at?: string
+  updated_at?: string
+  // Campos legacy para compatibilidad
+  tipo_ajuste?: "ENTRADA" | "SALIDA" | "AJUSTE" | "TRANSFERENCIA" | "DEVOLUCION"
+  razon?: string
+  referencia?: string | null
 }
 
 export interface OrdenTrabajo {

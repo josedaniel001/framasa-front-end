@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast"
 import { API_ENDPOINTS } from "@/lib/api-config"
 import { apiPost } from "@/lib/api-client"
 import { Loader2 } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
 
 export default function NuevoClientePage() {
   const router = useRouter()
@@ -23,6 +24,9 @@ export default function NuevoClientePage() {
   const [direccion, setDireccion] = useState<string>("")
   const [telefono, setTelefono] = useState<string>("")
   const [email, setEmail] = useState<string>("")
+  const [activo, setActivo] = useState<boolean>(true)
+  const [permiteFiado, setPermiteFiado] = useState<boolean>(false)
+  const [limiteCredito, setLimiteCredito] = useState<number>(0)
   const [submitting, setSubmitting] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -46,7 +50,9 @@ export default function NuevoClientePage() {
         direccion: direccion || null,
         telefono,
         email: email || null,
-        activo: true,
+        activo,
+        permite_fiado: permiteFiado,
+        limite_credito: permiteFiado ? limiteCredito : 0,
       }
 
       await apiPost(API_ENDPOINTS.FERRETERIA.CLIENTES, clienteData)
@@ -136,6 +142,39 @@ export default function NuevoClientePage() {
                 placeholder="Correo electrónico"
               />
             </div>
+            <div className="flex items-center space-x-2">
+              <Switch id="activo" checked={activo} onCheckedChange={setActivo} />
+              <Label htmlFor="activo">Cliente Activo</Label>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Información de Crédito</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="flex items-center space-x-2">
+              <Switch id="permiteFiado" checked={permiteFiado} onCheckedChange={setPermiteFiado} />
+              <Label htmlFor="permiteFiado">Permitir Fiado</Label>
+            </div>
+            {permiteFiado && (
+              <div className="grid gap-2">
+                <Label htmlFor="limiteCredito">Límite de Crédito (Q)</Label>
+                <Input
+                  id="limiteCredito"
+                  type="number"
+                  value={limiteCredito}
+                  onChange={(e) => setLimiteCredito(Number(e.target.value))}
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Monto máximo que el cliente puede comprar a crédito
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

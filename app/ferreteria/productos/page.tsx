@@ -26,8 +26,6 @@ import Link from "next/link"
 import { API_ENDPOINTS } from "@/lib/api-config"
 import { apiGet } from "@/lib/api-client"
 
-const ITEMS_PER_PAGE = 5
-
 interface ProductoFerreteria {
   id: string
   codigo: string
@@ -39,6 +37,7 @@ interface ProductoFerreteria {
   unidadMedida: string
   stockActual: number
   stockMinimo: number
+  proveedor?: string
   activo: boolean
   fechaCreacion: string
   ultimaActualizacion: string
@@ -58,6 +57,12 @@ interface Categoria {
   activo: boolean
 }
 
+interface PaginationInfo {
+  count: number
+  next: string | null
+  previous: string | null
+}
+
 export default function ProductosFerreteriaPage() {
   const [productos, setProductos] = useState<ProductoFerreteria[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
@@ -66,6 +71,11 @@ export default function ProductosFerreteriaPage() {
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
+  const [pagination, setPagination] = useState<PaginationInfo>({
+    count: 0,
+    next: null,
+    previous: null,
+  })
   const [filters, setFilters] = useState({
     estado: "todos",
     categoria: "todas",
@@ -79,17 +89,17 @@ export default function ProductosFerreteriaPage() {
         setLoading(true)
         setError(null)
 
-        // Construir query params para filtros
+        // Construir query params para filtros y paginación
         const params = new URLSearchParams()
         if (searchTerm) params.append('search', searchTerm)
         if (filters.estado !== 'todos') params.append('estado', filters.estado)
         if (filters.categoria !== 'todas') params.append('categoria', filters.categoria)
         if (filters.stockMinimo !== 'todos') params.append('stockMinimo', filters.stockMinimo)
+        // Agregar parámetro de página
+        params.append('page', String(currentPage))
 
         const queryString = params.toString()
-        const productosUrl = queryString 
-          ? `${API_ENDPOINTS.FERRETERIA.PRODUCTOS}?${queryString}`
-          : API_ENDPOINTS.FERRETERIA.PRODUCTOS
+        const productosUrl = `${API_ENDPOINTS.FERRETERIA.PRODUCTOS}?${queryString}`
 
         // Cargar productos, estadísticas y categorías en paralelo
         // Usar Promise.allSettled para capturar errores individuales sin detener todo
@@ -123,22 +133,55 @@ export default function ProductosFerreteriaPage() {
           console.warn('Error al cargar categorías (continuando sin ellas):', categoriasResult.reason)
         }
 
-        // Manejar respuesta paginada o directa de Django REST Framework
-        let productosData: ProductoFerreteria[] = []
-        if (Array.isArray(productosResponse)) {
-          productosData = productosResponse
-        } else if (productosResponse && Array.isArray(productosResponse.results)) {
-          // Respuesta paginada de DRF
-          productosData = productosResponse.results
-        } else if (productosResponse && productosResponse.data && Array.isArray(productosResponse.data)) {
-          // Otra posible estructura
-          productosData = productosResponse.data
-        } else {
-          console.warn('Formato de respuesta inesperado:', productosResponse)
-          productosData = []
+        // Manejar respuesta paginada de Django REST Framework
+        let productosRaw: any[] = []
+        let paginationInfo: PaginationInfo = {
+          count: 0,
+          next: null,
+          previous: null,
         }
 
+        if (Array.isArray(productosResponse)) {
+          // Si es un array directo (sin paginación)
+          productosRaw = productosResponse
+          paginationInfo.count = productosResponse.length
+        } else if (productosResponse && Array.isArray(productosResponse.results)) {
+          // Respuesta paginada de DRF (formato estándar)
+          productosRaw = productosResponse.results
+          paginationInfo = {
+            count: productosResponse.count || 0,
+            next: productosResponse.next || null,
+            previous: productosResponse.previous || null,
+          }
+        } else if (productosResponse && productosResponse.data && Array.isArray(productosResponse.data)) {
+          // Otra posible estructura
+          productosRaw = productosResponse.data
+          paginationInfo.count = productosResponse.count || productosResponse.data.length
+        } else {
+          console.warn('Formato de respuesta inesperado:', productosResponse)
+          productosRaw = []
+        }
+
+        // Mapear datos del backend (snake_case) al formato del frontend (camelCase)
+        const productosData: ProductoFerreteria[] = productosRaw.map((producto: any) => ({
+          id: String(producto.id || producto.pk || ''),
+          codigo: producto.codigo || '',
+          nombre: producto.nombre || '',
+          descripcion: producto.descripcion || '',
+          categoria: producto.categoria || producto.categoria_nombre || producto.categoria?.nombre || '',
+          precioVenta: producto.precio_venta || producto.precioVenta || 0,
+          costoUnitario: producto.costo_unitario || producto.costoUnitario || 0,
+          unidadMedida: producto.unidad_medida || producto.unidad_medida_nombre || producto.unidad_medida?.nombre || producto.unidadMedida || '',
+          stockActual: producto.stock_actual || producto.stockActual || 0,
+          stockMinimo: producto.stock_minimo || producto.stockMinimo || 0,
+          proveedor: producto.proveedor || null,
+          activo: producto.activo !== undefined ? producto.activo : true,
+          fechaCreacion: producto.fecha_creacion || producto.fechaCreacion || producto.created_at || new Date().toISOString(),
+          ultimaActualizacion: producto.ultima_actualizacion || producto.ultimaActualizacion || producto.updated_at || new Date().toISOString(),
+        }))
+
         setProductos(productosData)
+        setPagination(paginationInfo)
         setStats(statsData)
         setCategorias(Array.isArray(categoriasData) ? categoriasData : [])
       } catch (err) {
@@ -150,27 +193,43 @@ export default function ProductosFerreteriaPage() {
     }
 
     loadData()
-  }, [searchTerm, filters])
+  }, [searchTerm, filters, currentPage])
 
-  // Los productos ya vienen filtrados del backend, pero aplicamos paginación
-  // Asegurarse de que siempre sea un array
-  const filteredProductos = Array.isArray(productos) ? productos : []
-
-  // Paginación
-  const totalPages = Math.ceil(filteredProductos.length / ITEMS_PER_PAGE)
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
-  const endIndex = startIndex + ITEMS_PER_PAGE
-  const paginatedProductos = filteredProductos.slice(startIndex, endIndex)
+  // Los productos ya vienen paginados del backend
+  const paginatedProductos = Array.isArray(productos) ? productos : []
+  
+  // Calcular información de paginación desde el backend
+  // Django REST Framework típicamente usa 10 items por página por defecto
+  const itemsPerPage = paginatedProductos.length > 0 
+    ? paginatedProductos.length 
+    : (pagination.count > 0 ? 10 : 0) // Si hay count pero no resultados, asumir 10 por página
+  
+  const totalPages = pagination.count > 0 && itemsPerPage > 0
+    ? Math.ceil(pagination.count / itemsPerPage)
+    : (paginatedProductos.length > 0 ? 1 : 0)
+  
+  const startIndex = pagination.count > 0 && itemsPerPage > 0
+    ? (currentPage - 1) * itemsPerPage + 1
+    : 1
+  const endIndex = pagination.count > 0
+    ? Math.min(currentPage * itemsPerPage, pagination.count)
+    : paginatedProductos.length
 
   // Resetear página cuando cambian los filtros
   const handleFilterChange = (key: string, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }))
-    setCurrentPage(1)
+    setCurrentPage(1) // Resetear a la primera página cuando cambian los filtros
   }
 
   const handleSearchChange = (value: string) => {
     setSearchTerm(value)
-    setCurrentPage(1)
+    setCurrentPage(1) // Resetear a la primera página cuando cambia la búsqueda
+  }
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+    // Scroll al inicio de la tabla cuando cambia la página
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const clearFilters = () => {
@@ -409,7 +468,11 @@ export default function ProductosFerreteriaPage() {
             )}
           </div>
           <div className="mb-4 text-sm text-muted-foreground">
-            Mostrando {startIndex + 1}-{Math.min(endIndex, filteredProductos.length)} de {filteredProductos.length} productos
+            {pagination.count > 0 ? (
+              <>Mostrando {startIndex}-{endIndex} de {pagination.count} productos</>
+            ) : (
+              <>No hay productos para mostrar</>
+            )}
           </div>
           <Table>
             <TableHeader>
@@ -417,6 +480,7 @@ export default function ProductosFerreteriaPage() {
                 <TableHead>Código</TableHead>
                 <TableHead>Nombre</TableHead>
                 <TableHead>Categoría</TableHead>
+                <TableHead>Proveedor</TableHead>
                 <TableHead>Precio</TableHead>
                 <TableHead>Stock</TableHead>
                 <TableHead>Estado</TableHead>
@@ -429,6 +493,7 @@ export default function ProductosFerreteriaPage() {
                   <TableCell className="font-medium">{producto.codigo}</TableCell>
                   <TableCell>{producto.nombre}</TableCell>
                   <TableCell>{producto.categoria}</TableCell>
+                  <TableCell>{producto.proveedor || "-"}</TableCell>
                   <TableCell>Q{producto.precioVenta.toFixed(2)}</TableCell>
                   <TableCell>{producto.stockActual}</TableCell>
                   <TableCell>
@@ -465,15 +530,15 @@ export default function ProductosFerreteriaPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1}
+                      onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                      disabled={!pagination.previous || currentPage === 1}
                       className="gap-1"
                     >
                       <ChevronLeftIcon className="h-4 w-4" />
                       <span className="hidden sm:block">Anterior</span>
                     </Button>
                   </PaginationItem>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                  {totalPages > 0 && Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
                     if (
                       page === 1 ||
                       page === totalPages ||
@@ -484,7 +549,7 @@ export default function ProductosFerreteriaPage() {
                           <Button
                             variant={currentPage === page ? "outline" : "ghost"}
                             size="sm"
-                            onClick={() => setCurrentPage(page)}
+                            onClick={() => handlePageChange(page)}
                             className={currentPage === page ? "font-semibold" : ""}
                           >
                             {page}
@@ -504,8 +569,8 @@ export default function ProductosFerreteriaPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-                      disabled={currentPage === totalPages}
+                      onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                      disabled={!pagination.next || currentPage === totalPages}
                       className="gap-1"
                     >
                       <span className="hidden sm:block">Siguiente</span>
