@@ -10,7 +10,29 @@ import { ArrowLeft, Printer, DollarSign, Loader2 } from "lucide-react"
 import { API_ENDPOINTS } from "@/lib/api-config"
 import { apiGet } from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
-import { AgregarPagoDialog } from "@/components/facturacion/agregar-pago-dialog"
+import { AgregarPagosMultiplesDialog } from "@/components/facturacion/agregar-pagos-multiples-dialog"
+
+const EMPRESA_INFO: Record<
+  string,
+  { label: string; className: string }
+> = {
+  FERRETERIA: {
+    label: "Ferretería",
+    className: "bg-blue-100 text-blue-800 border-blue-200",
+  },
+  BLOQUERA: {
+    label: "Bloquera",
+    className: "bg-green-100 text-green-800 border-green-200",
+  },
+  PIEDRINERA: {
+    label: "Piedrinera",
+    className: "bg-orange-100 text-orange-800 border-orange-200",
+  },
+  MIXTA: {
+    label: "Mixta",
+    className: "bg-purple-100 text-purple-800 border-purple-200",
+  },
+}
 
 interface VentaDetallePageProps {
   params: Promise<{
@@ -293,17 +315,19 @@ export default function VentaDetallePage({ params }: VentaDetallePageProps) {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      className={
-                        detalle.producto_empresa === "FERRETERIA"
-                          ? "bg-blue-500"
-                          : detalle.producto_empresa === "BLOQUERA"
-                          ? "bg-green-500"
-                          : "bg-orange-500"
-                      }
-                    >
-                      {detalle.producto_empresa}
-                    </Badge>
+                    {(() => {
+                      const info =
+                        EMPRESA_INFO[detalle.producto_empresa] ||
+                        EMPRESA_INFO.MIXTA
+                      return (
+                        <Badge
+                          variant="outline"
+                          className={`px-3 py-1 text-xs font-semibold ${info.className}`}
+                        >
+                          {info.label}
+                        </Badge>
+                      )
+                    })()}
                   </TableCell>
                   <TableCell>{detalle.cantidad}</TableCell>
                   <TableCell>
@@ -355,12 +379,17 @@ export default function VentaDetallePage({ params }: VentaDetallePageProps) {
         </Card>
       )}
 
-      <AgregarPagoDialog
+      <AgregarPagosMultiplesDialog
         open={showPagoDialog}
         onOpenChange={setShowPagoDialog}
         facturaId={factura.id}
+        clienteId={factura.cliente_id}
+        totalFactura={factura.total}
         saldoPendiente={factura.saldo_pendiente}
-        onPagoAgregado={handlePagoAgregado}
+        onPagosAgregados={() => {
+          handlePagoAgregado()
+          setShowPagoDialog(false)
+        }}
       />
     </div>
   )

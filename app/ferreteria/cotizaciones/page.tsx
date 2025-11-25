@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { PlusCircle, Search, FileText, Clock, CheckCircle, XCircle, Eye, Edit, Filter, X, Download, RefreshCw, DollarSign, TrendingUp, Percent, Calendar, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from "lucide-react"
+import { PlusCircle, Search, FileText, Clock, CheckCircle, XCircle, Eye, Edit, Filter, X, Download, RefreshCw, DollarSign, TrendingUp, Percent, Calendar, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -23,76 +23,140 @@ import {
   PaginationEllipsis,
 } from "@/components/ui/pagination"
 import Link from "next/link"
-import { getSampleCotizacionesFerreteria } from "@/lib/sample-data"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet } from "@/lib/api-client"
+import { useToast } from "@/hooks/use-toast"
 
-const ITEMS_PER_PAGE = 5
+const ITEMS_PER_PAGE = 10
+
+interface Cotizacion {
+  id: number
+  numero_cotizacion: string
+  empresa: string
+  empresa_display: string
+  cliente_id: number
+  cliente_nombre: string
+  cliente_nit: string | null
+  subtotal: number
+  descuento: number
+  total: number
+  estado: string
+  estado_display: string
+  fecha_cotizacion: string
+  fecha_vencimiento: string
+  fecha_aceptacion: string | null
+  factura_generada: number | null
+  factura_generada_numero: string | null
+  observaciones: string | null
+  condiciones: string | null
+  detalles: Array<{
+    id: number
+    producto_id: number
+    producto_empresa: string
+    producto_codigo: string
+    producto_nombre: string
+    cantidad: number
+    precio_unitario: number
+    descuento: number
+    subtotal: number
+  }>
+}
+
+interface CotizacionListResponse {
+  count: number
+  next: string | null
+  previous: string | null
+  results: Cotizacion[]
+}
 
 export default function CotizacionesFerreteriaPage() {
-  const cotizaciones = getSampleCotizacionesFerreteria()
+  const { toast } = useToast()
+  const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
   const [filters, setFilters] = useState({
     estado: "todos",
     periodo: "todos",
-    rangoTotal: "todos",
+    empresa: "todos",
   })
 
-  // Obtener clientes únicos
-  const clientes = useMemo(() => {
-    const clientesUnicos = new Set(cotizaciones.map((c) => c.cliente))
-    return Array.from(clientesUnicos).sort()
-  }, [cotizaciones])
+  // Cargar cotizaciones desde la API
+  useEffect(() => {
+    loadCotizaciones()
+  }, [currentPage, filters, searchTerm])
 
-  // Filtrar cotizaciones
-  const filteredCotizaciones = useMemo(() => {
-    return cotizaciones.filter((cotizacion) => {
-      // Búsqueda por texto
-      const matchesSearch =
-        cotizacion.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        cotizacion.cliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        cotizacion.estado.toLowerCase().includes(searchTerm.toLowerCase())
+  const loadCotizaciones = async () => {
+    try {
+      setLoading(true)
+      setError(null)
 
-      // Filtro por estado
-      const matchesEstado = filters.estado === "todos" || cotizacion.estado === filters.estado
+      const params = new URLSearchParams()
+      params.append("page", String(currentPage))
+      params.append("limit", String(ITEMS_PER_PAGE))
 
-      // Filtro por periodo
-      const cotizacionFecha = new Date(cotizacion.fecha)
-      const hoy = new Date()
-      let matchesPeriodo = true
-
-      if (filters.periodo === "hoy") {
-        matchesPeriodo =
-          cotizacionFecha.getDate() === hoy.getDate() &&
-          cotizacionFecha.getMonth() === hoy.getMonth() &&
-          cotizacionFecha.getFullYear() === hoy.getFullYear()
-      } else if (filters.periodo === "mes") {
-        matchesPeriodo =
-          cotizacionFecha.getMonth() === hoy.getMonth() && cotizacionFecha.getFullYear() === hoy.getFullYear()
-      } else if (filters.periodo === "semana") {
-        const semanaAtras = new Date(hoy)
-        semanaAtras.setDate(hoy.getDate() - 7)
-        matchesPeriodo = cotizacionFecha >= semanaAtras
+      // Filtros
+      if (filters.estado !== "todos") {
+        const estadoMap: Record<string, string> = {
+          "Pendiente": "ENVIADA",
+          "Aceptada": "ACEPTADA",
+          "Rechazada": "RECHAZADA",
+          "Borrador": "BORRADOR",
+          "Vencida": "VENCIDA",
+        }
+        params.append("estado", estadoMap[filters.estado] || filters.estado)
       }
 
-      // Filtro por rango de total
-      let matchesRango = true
-      if (filters.rangoTotal === "bajo") {
-        matchesRango = cotizacion.total < 500
-      } else if (filters.rangoTotal === "medio") {
-        matchesRango = cotizacion.total >= 500 && cotizacion.total < 2000
-      } else if (filters.rangoTotal === "alto") {
-        matchesRango = cotizacion.total >= 2000
+      if (filters.empresa !== "todos") {
+        params.append("empresa", filters.empresa)
       }
 
-      return matchesSearch && matchesEstado && matchesPeriodo && matchesRango
-    })
-  }, [cotizaciones, searchTerm, filters])
+      // Filtro por período
+      if (filters.periodo !== "todos") {
+        const hoy = new Date()
+        let fechaDesde = ""
+        if (filters.periodo === "hoy") {
+          fechaDesde = hoy.toISOString().split("T")[0]
+        } else if (filters.periodo === "semana") {
+          const semanaAtras = new Date(hoy)
+          semanaAtras.setDate(hoy.getDate() - 7)
+          fechaDesde = semanaAtras.toISOString().split("T")[0]
+        } else if (filters.periodo === "mes") {
+          const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+          fechaDesde = inicioMes.toISOString().split("T")[0]
+        }
+        if (fechaDesde) {
+          params.append("fecha_desde", fechaDesde)
+        }
+        params.append("fecha_hasta", hoy.toISOString().split("T")[0])
+      }
 
-  // Paginación
-  const totalPages = Math.ceil(filteredCotizaciones.length / ITEMS_PER_PAGE)
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
-  const endIndex = startIndex + ITEMS_PER_PAGE
-  const paginatedCotizaciones = filteredCotizaciones.slice(startIndex, endIndex)
+      // Búsqueda
+      if (searchTerm) {
+        params.append("numero", searchTerm)
+      }
+
+      const url = `${API_ENDPOINTS.FACTURACION.COTIZACIONES}?${params.toString()}`
+      const data = await apiGet<CotizacionListResponse>(url)
+
+      setCotizaciones(data.results || [])
+      setTotalCount(data.count || 0)
+      setTotalPages(Math.ceil((data.count || 0) / ITEMS_PER_PAGE))
+    } catch (err: any) {
+      console.error("Error al cargar cotizaciones:", err)
+      setError(err.message || "Error al cargar las cotizaciones")
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las cotizaciones",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   // Resetear página cuando cambian los filtros
   const handleFilterChange = (key: string, value: string) => {
@@ -106,26 +170,26 @@ export default function CotizacionesFerreteriaPage() {
   }
 
   const clearFilters = () => {
-    setFilters({ estado: "todos", periodo: "todos", rangoTotal: "todos" })
+    setFilters({ estado: "todos", periodo: "todos", empresa: "todos" })
     setSearchTerm("")
     setCurrentPage(1)
   }
 
   const hasActiveFilters =
-    filters.estado !== "todos" || filters.periodo !== "todos" || filters.rangoTotal !== "todos"
+    filters.estado !== "todos" || filters.periodo !== "todos" || filters.empresa !== "todos"
 
   // Estadísticas
-  const totalCotizaciones = cotizaciones.length
-  const cotizacionesPendientes = cotizaciones.filter((c) => c.estado === "Pendiente").length
-  const cotizacionesAceptadas = cotizaciones.filter((c) => c.estado === "Aceptada").length
-  const cotizacionesRechazadas = cotizaciones.filter((c) => c.estado === "Rechazada").length
-  const valorTotalCotizaciones = cotizaciones.reduce((sum, c) => sum + c.total, 0)
+  const totalCotizaciones = totalCount
+  const cotizacionesPendientes = cotizaciones.filter((c) => c.estado === "ENVIADA" || c.estado === "BORRADOR").length
+  const cotizacionesAceptadas = cotizaciones.filter((c) => c.estado === "ACEPTADA").length
+  const cotizacionesRechazadas = cotizaciones.filter((c) => c.estado === "RECHAZADA").length
+  const valorTotalCotizaciones = cotizaciones.reduce((sum, c) => sum + (c.total || 0), 0)
   const valorCotizacionesAceptadas = cotizaciones
-    .filter((c) => c.estado === "Aceptada")
-    .reduce((sum, c) => sum + c.total, 0)
+    .filter((c) => c.estado === "ACEPTADA")
+    .reduce((sum, c) => sum + (c.total || 0), 0)
   const valorCotizacionesPendientes = cotizaciones
-    .filter((c) => c.estado === "Pendiente")
-    .reduce((sum, c) => sum + c.total, 0)
+    .filter((c) => c.estado === "ENVIADA" || c.estado === "BORRADOR")
+    .reduce((sum, c) => sum + (c.total || 0), 0)
   const tasaConversion =
     totalCotizaciones > 0 ? ((cotizacionesAceptadas / totalCotizaciones) * 100).toFixed(1) : "0"
   
@@ -134,24 +198,34 @@ export default function CotizacionesFerreteriaPage() {
     const hoy = new Date()
     return cotizaciones.filter(
       (c) =>
-        new Date(c.fecha).getMonth() === hoy.getMonth() &&
-        new Date(c.fecha).getFullYear() === hoy.getFullYear(),
+        new Date(c.fecha_cotizacion).getMonth() === hoy.getMonth() &&
+        new Date(c.fecha_cotizacion).getFullYear() === hoy.getFullYear(),
     )
   }, [cotizaciones])
   
-  const valorMesActual = cotizacionesMesActual.reduce((sum, c) => sum + c.total, 0)
+  const valorMesActual = cotizacionesMesActual.reduce((sum, c) => sum + (c.total || 0), 0)
 
   const getStatusVariant = (status: string) => {
     switch (status) {
-      case "Aceptada":
+      case "ACEPTADA":
         return "default"
-      case "Pendiente":
+      case "ENVIADA":
+      case "BORRADOR":
         return "secondary"
-      case "Rechazada":
+      case "RECHAZADA":
+      case "VENCIDA":
         return "destructive"
       default:
         return "outline"
     }
+  }
+
+  const formatDate = (date: string) => {
+    return new Date(date).toLocaleDateString("es-GT", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    })
   }
 
   return (
@@ -159,8 +233,8 @@ export default function CotizacionesFerreteriaPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Cotizaciones</h1>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => window.location.reload()}>
-            <RefreshCw className="mr-2 h-4 w-4" /> Actualizar
+          <Button variant="outline" onClick={() => loadCotizaciones()} disabled={loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Actualizar
           </Button>
           <Button
             variant="outline"
@@ -340,9 +414,11 @@ export default function CotizacionesFerreteriaPage() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="todos">Todos</SelectItem>
-                            <SelectItem value="Pendiente">Pendientes</SelectItem>
+                            <SelectItem value="Borrador">Borrador</SelectItem>
+                            <SelectItem value="Pendiente">Enviadas</SelectItem>
                             <SelectItem value="Aceptada">Aceptadas</SelectItem>
                             <SelectItem value="Rechazada">Rechazadas</SelectItem>
+                            <SelectItem value="Vencida">Vencidas</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -364,19 +440,20 @@ export default function CotizacionesFerreteriaPage() {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="rangoTotal">Rango de Total</Label>
+                        <Label htmlFor="empresa">Empresa</Label>
                         <Select
-                          value={filters.rangoTotal}
-                          onValueChange={(value) => handleFilterChange("rangoTotal", value)}
+                          value={filters.empresa}
+                          onValueChange={(value) => handleFilterChange("empresa", value)}
                         >
-                          <SelectTrigger id="rangoTotal">
+                          <SelectTrigger id="empresa">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="todos">Todos</SelectItem>
-                            <SelectItem value="bajo">Menor a Q500</SelectItem>
-                            <SelectItem value="medio">Q500 - Q2,000</SelectItem>
-                            <SelectItem value="alto">Mayor a Q2,000</SelectItem>
+                            <SelectItem value="todos">Todas</SelectItem>
+                            <SelectItem value="FERRETERIA">Ferretería</SelectItem>
+                            <SelectItem value="BLOQUERA">Bloquera</SelectItem>
+                            <SelectItem value="PIEDRINERA">Piedrinera</SelectItem>
+                            <SelectItem value="MIXTA">Mixta</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -414,16 +491,11 @@ export default function CotizacionesFerreteriaPage() {
                     </button>
                   </Badge>
                 )}
-                {filters.rangoTotal !== "todos" && (
+                {filters.empresa !== "todos" && (
                   <Badge variant="secondary" className="gap-1">
-                    Total:{" "}
-                    {filters.rangoTotal === "bajo"
-                      ? "< Q500"
-                      : filters.rangoTotal === "medio"
-                        ? "Q500 - Q2,000"
-                        : "> Q2,000"}
+                    Empresa: {filters.empresa}
                     <button
-                      onClick={() => handleFilterChange("rangoTotal", "todos")}
+                      onClick={() => handleFilterChange("empresa", "todos")}
                       className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
                     >
                       <X className="h-3 w-3" />
@@ -433,62 +505,81 @@ export default function CotizacionesFerreteriaPage() {
               </div>
             )}
           </div>
-          <div className="mb-4 text-sm text-muted-foreground">
-            Mostrando {startIndex + 1}-{Math.min(endIndex, filteredCotizaciones.length)} de {filteredCotizaciones.length} cotizaciones
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Items</TableHead>
-                <TableHead>Total</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginatedCotizaciones.map((cotizacion) => (
-                <TableRow key={cotizacion.id}>
-                  <TableCell className="font-medium">{cotizacion.codigo}</TableCell>
-                  <TableCell>
-                    {new Date(cotizacion.fecha).toLocaleDateString("es-GT", {
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </TableCell>
-                  <TableCell>{cotizacion.cliente}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{cotizacion.items.length} producto{cotizacion.items.length !== 1 ? "s" : ""}</Badge>
-                  </TableCell>
-                  <TableCell className="font-medium">Q{cotizacion.total.toFixed(2)}</TableCell>
-                  <TableCell>
-                    <Badge variant={getStatusVariant(cotizacion.estado)}>{cotizacion.estado}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Link href={`/ferreteria/cotizaciones/${cotizacion.id}`}>
-                        <Button variant="outline" size="sm">
-                          <Eye className="h-4 w-4" />
-                          <span className="sr-only">Ver</span>
-                        </Button>
-                      </Link>
-                      <Link href={`/ferreteria/cotizaciones/${cotizacion.id}/editar`}>
-                        <Button variant="outline" size="sm">
-                          <Edit className="h-4 w-4" />
-                          <span className="sr-only">Editar</span>
-                        </Button>
-                      </Link>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {paginatedCotizaciones.length === 0 && (
-            <p className="text-center text-muted-foreground mt-4">No se encontraron cotizaciones.</p>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : error ? (
+            <div className="text-center text-destructive py-8">{error}</div>
+          ) : (
+            <>
+              <div className="mb-4 text-sm text-muted-foreground">
+                Mostrando {((currentPage - 1) * ITEMS_PER_PAGE) + 1}-{Math.min(currentPage * ITEMS_PER_PAGE, totalCount)} de {totalCount} cotizaciones
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Código</TableHead>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Empresa</TableHead>
+                    <TableHead>Items</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {cotizaciones.map((cotizacion) => (
+                    <TableRow key={cotizacion.id}>
+                      <TableCell className="font-medium">{cotizacion.numero_cotizacion}</TableCell>
+                      <TableCell>{formatDate(cotizacion.fecha_cotizacion)}</TableCell>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{cotizacion.cliente_nombre}</div>
+                          {cotizacion.cliente_nit && (
+                            <div className="text-xs text-muted-foreground">NIT: {cotizacion.cliente_nit}</div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{cotizacion.empresa_display || cotizacion.empresa}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{cotizacion.detalles?.length || 0} producto{(cotizacion.detalles?.length || 0) !== 1 ? "s" : ""}</Badge>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        Q{(cotizacion.total || 0).toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={getStatusVariant(cotizacion.estado)}>{cotizacion.estado_display || cotizacion.estado}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Link href={`/ferreteria/cotizaciones/${cotizacion.id}`}>
+                            <Button variant="outline" size="sm">
+                              <Eye className="h-4 w-4" />
+                              <span className="sr-only">Ver</span>
+                            </Button>
+                          </Link>
+                          {cotizacion.estado === "BORRADOR" && (
+                            <Link href={`/ferreteria/cotizaciones/${cotizacion.id}/editar`}>
+                              <Button variant="outline" size="sm">
+                                <Edit className="h-4 w-4" />
+                                <span className="sr-only">Editar</span>
+                              </Button>
+                            </Link>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {cotizaciones.length === 0 && (
+                <p className="text-center text-muted-foreground mt-4">No se encontraron cotizaciones.</p>
+              )}
+            </>
           )}
           {totalPages > 1 && (
             <div className="mt-4">

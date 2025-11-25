@@ -109,6 +109,16 @@ export const API_ENDPOINTS = {
     get FACTURAS_ESTADISTICAS() {
       return nextApiEndpoint('/api/facturacion/facturas/estadisticas')
     },
+    PAGOS: nextApiEndpoint('/api/facturacion/pagos'),
+    PAGO: (id: string | number) => nextApiEndpoint(`/api/facturacion/pagos/${id}`),
+    get COTIZACIONES() {
+      return nextApiEndpoint('/api/facturacion/cotizaciones')
+    },
+    COTIZACION: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}`),
+    COTIZACION_ENVIAR: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}/enviar`),
+    COTIZACION_ACEPTAR: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}/aceptar`),
+    COTIZACION_RECHAZAR: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}/rechazar`),
+    COTIZACION_CONVERTIR_FACTURA: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}/convertir_a_factura`),
   },
 }
 

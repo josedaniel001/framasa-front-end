@@ -11,10 +11,12 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
 import { PlusCircle, XCircle, Search, Loader2 } from "lucide-react"
-import { getSampleProductosFerreteria, getSampleClientesFerreteria } from "@/lib/sample-data"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet, apiPost } from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
-import { TipoVenta } from "@/types/database"
+import { AgregarPagosMultiplesDialog } from "@/components/facturacion/agregar-pagos-multiples-dialog"
 
 interface VentaItem {
   productoId: string
@@ -43,6 +45,9 @@ export default function NuevaVentaPage() {
   const [precioProducto, setPrecioProducto] = useState<number>(0)
   const [descuento, setDescuento] = useState<number>(0)
   const [observaciones, setObservaciones] = useState<string>("")
+  const [facturaCreada, setFacturaCreada] = useState<any>(null)
+  const [facturaCreadaId, setFacturaCreadaId] = useState<number | null>(null)
+  const [showPagosDialog, setShowPagosDialog] = useState(false)
 
   // Cargar datos al montar
   useEffect(() => {
@@ -151,9 +156,11 @@ export default function NuevaVentaPage() {
     return matchesEmpresa && matchesSearch && p.stock > 0
   })
 
-  const handleProductoChange = (productoId: string) => {
-    setProductoSeleccionado(productoId)
-    const producto = productosDisponibles.find((p) => String(p.id) === productoId)
+  const handleProductoChange = (productoValue: string) => {
+    setProductoSeleccionado(productoValue)
+    // El value viene en formato "EMPRESA-ID"
+    const [empresa, id] = productoValue.split("-")
+    const producto = productosDisponibles.find((p) => p.empresa === empresa && String(p.id) === id)
     if (producto) {
       setPrecioProducto(producto.precioVenta)
     }
@@ -169,7 +176,9 @@ export default function NuevaVentaPage() {
       return
     }
 
-    const producto = productosDisponibles.find((p) => String(p.id) === productoSeleccionado)
+    // El value viene en formato "EMPRESA-ID"
+    const [empresa, id] = productoSeleccionado.split("-")
+    const producto = productosDisponibles.find((p) => p.empresa === empresa && String(p.id) === id)
     if (!producto) return
 
     if (cantidadProducto > producto.stock) {
@@ -250,13 +259,17 @@ export default function NuevaVentaPage() {
     try {
       setSubmitting(true)
 
+      const empresas = Array.from(new Set(detalles.map((d) => d.producto_empresa)))
+      const empresa = empresas.length === 1 ? empresas[0] : "MIXTA"
+
       const facturaData = {
         cliente: Number(clienteSeleccionado),
+        empresa,
         descuento: descuento || 0,
         observaciones: observaciones.trim() || undefined,
         fecha_vencimiento: fechaVencimiento || undefined,
         detalles: detalles.map((d) => ({
-          producto_id: d.producto_id,
+          producto_id: Number(d.producto_id),
           producto_empresa: d.producto_empresa,
           cantidad: d.cantidad,
           precio_unitario: d.precio_unitario,
@@ -265,13 +278,21 @@ export default function NuevaVentaPage() {
       }
 
       const factura = await apiPost<any>(API_ENDPOINTS.FACTURACION.FACTURAS, facturaData)
+      const facturaId = factura?.id ?? factura?.factura?.id ?? null
+
+      if (!facturaId) {
+        throw new Error("No se pudo obtener el ID de la factura generada")
+      }
 
       toast({
         title: "Factura Creada",
         description: `Factura ${factura.numero_factura} creada exitosamente`,
       })
 
-      router.push(`/ferreteria/ventas/${factura.id}`)
+      // Guardar la factura creada y mostrar diálogo de pagos
+      setFacturaCreada(factura)
+      setFacturaCreadaId(facturaId)
+      setShowPagosDialog(true)
     } catch (error: any) {
       console.error("Error al crear factura:", error)
       const errorMessage =
@@ -310,7 +331,7 @@ export default function NuevaVentaPage() {
                     clientes.map((cliente) => (
                       <SelectItem key={cliente.id} value={String(cliente.id)}>
                         {cliente.nombre} {cliente.nit && `(${cliente.nit})`}
-                      </SelectItem>
+                    </SelectItem>
                     ))
                   )}
                 </SelectContent>
@@ -380,7 +401,7 @@ export default function NuevaVentaPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {productosFiltrados.map((producto) => (
-                      <SelectItem key={`${producto.empresa}-${producto.id}`} value={String(producto.id)}>
+                      <SelectItem key={`${producto.empresa}-${producto.id}`} value={`${producto.empresa}-${producto.id}`}>
                         <div className="flex flex-col">
                           <span>{producto.nombre}</span>
                           <span className="text-xs text-muted-foreground">
@@ -398,7 +419,10 @@ export default function NuevaVentaPage() {
                   id="cantidad"
                   type="number"
                   min="0.01"
-                  step={productoSeleccionado && productosDisponibles.find(p => String(p.id) === productoSeleccionado)?.empresa === "PIEDRINERA" ? "0.01" : "1"}
+                  step={productoSeleccionado && (() => {
+                    const [empresa] = productoSeleccionado.split("-")
+                    return empresa === "PIEDRINERA" ? "0.01" : "1"
+                  })()}
                   value={cantidadProducto}
                   onChange={(e) => setCantidadProducto(Number(e.target.value))}
                   required
@@ -530,6 +554,28 @@ export default function NuevaVentaPage() {
           </Button>
         </div>
       </form>
+
+      {/* Diálogo para agregar pagos múltiples */}
+      {facturaCreada && facturaCreadaId && (
+        <AgregarPagosMultiplesDialog
+          open={showPagosDialog}
+          onOpenChange={(open) => {
+            setShowPagosDialog(open)
+            if (!open) {
+              // Si se cierra el diálogo, redirigir al detalle de la factura
+              router.push(`/ferreteria/ventas/${facturaCreadaId}`)
+            }
+          }}
+          facturaId={facturaCreadaId}
+          clienteId={Number(clienteSeleccionado)}
+          totalFactura={facturaCreada.total || calcularTotal()}
+          saldoPendiente={facturaCreada.saldo_pendiente || facturaCreada.total || calcularTotal()}
+          onPagosAgregados={() => {
+            // Después de agregar pagos, redirigir al detalle
+            router.push(`/ferreteria/ventas/${facturaCreadaId}`)
+          }}
+        />
+      )}
     </div>
   )
 }
