@@ -82,6 +82,34 @@ export const API_ENDPOINTS = {
       return nextApiEndpoint('/api/planillas/empleados/stats')
     },
   },
+  REPORTES: {
+    get INVENTARIO_UNIFICADO() {
+      return nextApiEndpoint('/api/reportes/inventario-unificado')
+    },
+    get TOP_PRODUCTOS_VENDIDOS() {
+      return nextApiEndpoint('/api/reportes/top-productos-vendidos')
+    },
+    get ESTADISTICAS_PREDICTIVAS() {
+      return nextApiEndpoint('/api/reportes/estadisticas-predictivas')
+    },
+  },
+  FACTURACION: {
+    get FACTURAS() {
+      return nextApiEndpoint('/api/facturacion/facturas')
+    },
+    FACTURA(id: number | string) {
+      return `${nextApiEndpoint('/api/facturacion/facturas')}/${id}`
+    },
+    FACTURA_AGREGAR_PAGOS_MULTIPLES(id: number | string) {
+      return `${nextApiEndpoint('/api/facturacion/facturas')}/${id}/agregar-pagos-multiples`
+    },
+    FACTURA_ANULAR(id: number | string) {
+      return `${nextApiEndpoint('/api/facturacion/facturas')}/${id}/anular`
+    },
+    get FACTURAS_ESTADISTICAS() {
+      return nextApiEndpoint('/api/facturacion/facturas/estadisticas')
+    },
+  },
 }
 
 export default DJANGO_API_BASE

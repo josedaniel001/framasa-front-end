@@ -1,103 +1,151 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { getSampleVentasFerreteria, getSampleClientesFerreteria, getSamplePagos } from "@/lib/sample-data"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Edit, Printer, DollarSign } from "lucide-react"
-import Link from "next/link"
-import { RegistrarPagoDialog } from "@/components/ventas/registrar-pago-dialog"
-import { TipoVenta, EstadoPago } from "@/types/database"
-import type { Pago } from "@/types/database"
+import { ArrowLeft, Printer, DollarSign, Loader2 } from "lucide-react"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet } from "@/lib/api-client"
+import { useToast } from "@/hooks/use-toast"
+import { AgregarPagoDialog } from "@/components/facturacion/agregar-pago-dialog"
 
 interface VentaDetallePageProps {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
+}
+
+interface Factura {
+  id: number
+  numero_factura: string
+  empresa: string
+  empresa_display: string
+  cliente_id: number
+  cliente_nombre: string
+  cliente_nit: string | null
+  subtotal: number
+  descuento: number
+  total: number
+  total_pagado: number
+  saldo_pendiente: number
+  estado: string
+  estado_display: string
+  observaciones: string | null
+  usuario_id: number
+  usuario_nombre: string
+  fecha_factura: string
+  fecha_vencimiento: string | null
+  detalles: Array<{
+    id: number
+    producto_id: number
+    producto_empresa: string
+    producto_codigo: string
+    producto_nombre: string
+    cantidad: number
+    precio_unitario: number
+    descuento: number
+    subtotal: number
+  }>
+  pagos: Array<{
+    id: number
+    tipo_pago: string
+    tipo_pago_display: string
+    monto: number
+    referencia: string | null
+    observaciones: string | null
+    usuario_nombre: string
+    fecha_pago: string
+  }>
 }
 
 export default function VentaDetallePage({ params }: VentaDetallePageProps) {
   const router = useRouter()
-  const [ventas, setVentas] = useState(getSampleVentasFerreteria())
-  const [pagos, setPagos] = useState(getSamplePagos())
-  const clientes = getSampleClientesFerreteria()
+  const { toast } = useToast()
+  const [factura, setFactura] = useState<Factura | null>(null)
+  const [loading, setLoading] = useState(true)
   const [showPagoDialog, setShowPagoDialog] = useState(false)
+  const [facturaId, setFacturaId] = useState<string>("")
 
-  // Obtener la venta actualizada de la lista
-  const venta = useMemo(() => {
-    return ventas.find((v) => v.id === params.id)
-  }, [ventas, params.id])
+  useEffect(() => {
+    const loadFactura = async () => {
+      const resolvedParams = await params
+      const id = resolvedParams.id
+      setFacturaId(id)
+      try {
+        setLoading(true)
+        const data = await apiGet<Factura>(API_ENDPOINTS.FACTURACION.FACTURA(id))
+        setFactura(data)
+      } catch (error: any) {
+        console.error("Error al cargar factura:", error)
+        toast({
+          title: "Error",
+          description: "No se pudo cargar la factura",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadFactura()
+  }, [params, toast])
 
-  if (!venta) {
+  const handlePagoAgregado = () => {
+    // Recargar la factura
+    if (facturaId) {
+      apiGet<Factura>(API_ENDPOINTS.FACTURACION.FACTURA(facturaId))
+        .then((data) => {
+          setFactura(data)
+        })
+        .catch((error) => {
+          console.error("Error al recargar factura:", error)
+        })
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (!factura) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
-        <h1 className="text-3xl font-bold">Venta no encontrada</h1>
-        <p className="text-muted-foreground">La venta con ID {params.id} no existe.</p>
+        <h1 className="text-3xl font-bold">Factura no encontrada</h1>
+        <p className="text-muted-foreground">La factura con ID {facturaId} no existe.</p>
         <Button onClick={() => router.back()}>Volver a Ventas</Button>
       </div>
     )
   }
 
-  const clienteInfo = clientes.find((c) => c.id === venta.clienteId || c.nombre === venta.cliente)
-  const pagosVenta = useMemo(() => {
-    return pagos.filter((p) => p.ventaId === venta.id)
-  }, [pagos, venta.id])
-
   const getStatusVariant = (status: string) => {
     switch (status) {
-      case "Completada":
+      case "PAGADA":
         return "default"
-      case "Pendiente":
+      case "PENDIENTE":
         return "secondary"
-      case "Cancelada":
-        return "destructive"
-      default:
-        return "outline"
-    }
-  }
-
-  const getEstadoPagoVariant = (estado?: EstadoPago) => {
-    switch (estado) {
-      case EstadoPago.PAGADO:
-        return "default"
-      case EstadoPago.PARCIAL:
+      case "PARCIAL":
         return "secondary"
-      case EstadoPago.VENCIDO:
+      case "ANULADA":
         return "destructive"
-      case EstadoPago.PENDIENTE:
+      case "BORRADOR":
         return "outline"
       default:
         return "outline"
     }
   }
 
-  const handlePagoRegistrado = (nuevoPago: Pago) => {
-    // Agregar el pago a la lista
-    setPagos([...pagos, nuevoPago])
-
-    // Actualizar la venta con el nuevo estado de pago
-    const ventaActualizada = { ...venta }
-    const montoPagadoAnterior = venta.montoPagado || 0
-    const nuevoMontoPagado = montoPagadoAnterior + nuevoPago.monto
-    const nuevoSaldoPendiente = venta.total - nuevoMontoPagado
-
-    ventaActualizada.montoPagado = nuevoMontoPagado
-    ventaActualizada.saldoPendiente = nuevoSaldoPendiente
-
-    if (nuevoSaldoPendiente <= 0) {
-      ventaActualizada.estadoPago = EstadoPago.PAGADO
-      ventaActualizada.estado = "Completada"
-    } else if (nuevoMontoPagado > 0 && nuevoMontoPagado < venta.total) {
-      ventaActualizada.estadoPago = EstadoPago.PARCIAL
-    } else {
-      ventaActualizada.estadoPago = EstadoPago.PENDIENTE
-    }
-
-    // Actualizar la lista de ventas
-    setVentas(ventas.map((v) => (v.id === venta.id ? ventaActualizada : v)))
+  const formatFecha = (fecha: string) => {
+    return new Date(fecha).toLocaleDateString("es-GT", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    })
   }
 
   return (
@@ -106,18 +154,13 @@ export default function VentaDetallePage({ params }: VentaDetallePageProps) {
         <Button variant="outline" onClick={() => router.back()}>
           <ArrowLeft className="mr-2 h-4 w-4" /> Volver
         </Button>
-        <h1 className="text-3xl font-bold">Detalle de Venta: {venta.codigo}</h1>
+        <h1 className="text-3xl font-bold">Detalle de Factura: {factura.numero_factura}</h1>
         <div className="flex gap-2">
-          {venta.tipoVenta === TipoVenta.CREDITO && (venta.saldoPendiente || 0) > 0 && (
+          {factura.saldo_pendiente > 0 && factura.estado !== "ANULADA" && (
             <Button onClick={() => setShowPagoDialog(true)}>
               <DollarSign className="mr-2 h-4 w-4" /> Registrar Pago
             </Button>
           )}
-          <Link href={`/ferreteria/ventas/${venta.id}/editar`}>
-            <Button variant="outline">
-              <Edit className="mr-2 h-4 w-4" /> Editar
-            </Button>
-          </Link>
           <Button>
             <Printer className="mr-2 h-4 w-4" /> Imprimir
           </Button>
@@ -131,63 +174,59 @@ export default function VentaDetallePage({ params }: VentaDetallePageProps) {
           </CardHeader>
           <CardContent className="grid gap-2">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Código:</span>
-              <span className="font-medium">{venta.codigo}</span>
+              <span className="text-muted-foreground">Número Factura:</span>
+              <span className="font-medium">{factura.numero_factura}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Empresa:</span>
+              <Badge variant="outline">{factura.empresa_display || factura.empresa}</Badge>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Fecha:</span>
-              <span className="font-medium">{venta.fecha}</span>
+              <span className="font-medium">{formatFecha(factura.fecha_factura)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Estado:</span>
-              <Badge variant={getStatusVariant(venta.estado)}>{venta.estado}</Badge>
+              <Badge variant={getStatusVariant(factura.estado)}>{factura.estado_display || factura.estado}</Badge>
             </div>
+            {factura.fecha_vencimiento && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Fecha Vencimiento:</span>
+                <span className="font-medium">{formatFecha(factura.fecha_vencimiento)}</span>
+              </div>
+            )}
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Tipo de Venta:</span>
-              <Badge variant={venta.tipoVenta === TipoVenta.CREDITO ? "secondary" : "outline"}>
-                {venta.tipoVenta === TipoVenta.CREDITO ? "Crédito" : "Contado"}
-              </Badge>
+              <span className="text-muted-foreground">Subtotal:</span>
+              <span className="font-medium">
+                Q{factura.subtotal.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
             </div>
-            {venta.tipoVenta === TipoVenta.CREDITO && (
-              <>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Estado de Pago:</span>
-                  <Badge variant={getEstadoPagoVariant(venta.estadoPago)}>
-                    {venta.estadoPago === EstadoPago.PAGADO
-                      ? "Pagado"
-                      : venta.estadoPago === EstadoPago.PARCIAL
-                        ? "Pago Parcial"
-                        : venta.estadoPago === EstadoPago.VENCIDO
-                          ? "Vencido"
-                          : "Pendiente"}
-                  </Badge>
-                </div>
-                {venta.fechaVencimiento && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Fecha Vencimiento:</span>
-                    <span className="font-medium">
-                      {new Date(venta.fechaVencimiento).toLocaleDateString("es-GT")}
-                    </span>
-                  </div>
-                )}
-              </>
+            {factura.descuento > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Descuento:</span>
+                <span className="font-medium">
+                  Q{factura.descuento.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
             )}
             <div className="flex justify-between">
               <span className="text-muted-foreground">Total:</span>
-              <span className="font-bold text-lg">Q{venta.total.toFixed(2)}</span>
+              <span className="font-bold text-lg">
+                Q{factura.total.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
             </div>
-            {venta.tipoVenta === TipoVenta.CREDITO && (
+            {factura.saldo_pendiente > 0 && (
               <>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Monto Pagado:</span>
+                  <span className="text-muted-foreground">Total Pagado:</span>
                   <span className="font-medium text-green-600">
-                    Q{(venta.montoPagado || 0).toFixed(2)}
+                    Q{factura.total_pagado.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Saldo Pendiente:</span>
                   <span className="font-bold text-red-600">
-                    Q{(venta.saldoPendiente || 0).toFixed(2)}
+                    Q{factura.saldo_pendiente.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               </>
@@ -202,29 +241,18 @@ export default function VentaDetallePage({ params }: VentaDetallePageProps) {
           <CardContent className="grid gap-2">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Nombre:</span>
-              <span className="font-medium">{venta.cliente}</span>
+              <span className="font-medium">{factura.cliente_nombre}</span>
             </div>
-            {clienteInfo && (
-              <>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">NIT:</span>
-                  <span className="font-medium">{clienteInfo.nit}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Teléfono:</span>
-                  <span className="font-medium">{clienteInfo.telefono}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Email:</span>
-                  <span className="font-medium">{clienteInfo.email}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Dirección:</span>
-                  <span className="font-medium text-right">{clienteInfo.direccion}</span>
-                </div>
-              </>
+            {factura.cliente_nit && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">NIT:</span>
+                <span className="font-medium">{factura.cliente_nit}</span>
+              </div>
             )}
-            {!clienteInfo && <p className="text-muted-foreground text-sm">Detalles del cliente no disponibles.</p>}
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Usuario:</span>
+              <span className="font-medium">{factura.usuario_nombre}</span>
+            </div>
           </CardContent>
         </Card>
 
@@ -234,9 +262,7 @@ export default function VentaDetallePage({ params }: VentaDetallePageProps) {
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground">
-              {/* Asumiendo que la venta tiene una propiedad 'notas' */}
-              {/* @ts-ignore */}
-              {venta.notas || "No hay notas adicionales para esta venta."}
+              {factura.observaciones || "No hay observaciones adicionales para esta factura."}
             </p>
           </CardContent>
         </Card>
@@ -251,18 +277,41 @@ export default function VentaDetallePage({ params }: VentaDetallePageProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>Producto</TableHead>
+                <TableHead>Empresa</TableHead>
                 <TableHead>Cantidad</TableHead>
                 <TableHead>Precio Unitario</TableHead>
                 <TableHead className="text-right">Subtotal</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {venta.items.map((item, index) => (
-                <TableRow key={index}>
-                  <TableCell className="font-medium">{item.nombreProducto}</TableCell>
-                  <TableCell>{item.cantidad}</TableCell>
-                  <TableCell>Q{item.precioUnitario.toFixed(2)}</TableCell>
-                  <TableCell className="text-right">Q{item.subtotal.toFixed(2)}</TableCell>
+              {factura.detalles.map((detalle) => (
+                <TableRow key={detalle.id}>
+                  <TableCell>
+                    <div>
+                      <div className="font-medium">{detalle.producto_nombre}</div>
+                      <div className="text-xs text-muted-foreground">{detalle.producto_codigo}</div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      className={
+                        detalle.producto_empresa === "FERRETERIA"
+                          ? "bg-blue-500"
+                          : detalle.producto_empresa === "BLOQUERA"
+                          ? "bg-green-500"
+                          : "bg-orange-500"
+                      }
+                    >
+                      {detalle.producto_empresa}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{detalle.cantidad}</TableCell>
+                  <TableCell>
+                    Q {detalle.precio_unitario.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    Q {detalle.subtotal.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -270,55 +319,48 @@ export default function VentaDetallePage({ params }: VentaDetallePageProps) {
         </CardContent>
       </Card>
 
-      {venta.tipoVenta === TipoVenta.CREDITO && (
+      {factura.pagos && factura.pagos.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Historial de Pagos</CardTitle>
           </CardHeader>
           <CardContent>
-            {pagosVenta.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Monto</TableHead>
-                    <TableHead>Método</TableHead>
-                    <TableHead>Referencia</TableHead>
-                    <TableHead>Observaciones</TableHead>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Monto</TableHead>
+                  <TableHead>Tipo de Pago</TableHead>
+                  <TableHead>Referencia</TableHead>
+                  <TableHead>Observaciones</TableHead>
+                  <TableHead>Usuario</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {factura.pagos.map((pago) => (
+                  <TableRow key={pago.id}>
+                    <TableCell>{formatFecha(pago.fecha_pago)}</TableCell>
+                    <TableCell className="font-medium">
+                      Q{pago.monto.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </TableCell>
+                    <TableCell>{pago.tipo_pago_display || pago.tipo_pago}</TableCell>
+                    <TableCell>{pago.referencia || "-"}</TableCell>
+                    <TableCell>{pago.observaciones || "-"}</TableCell>
+                    <TableCell>{pago.usuario_nombre}</TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pagosVenta.map((pago) => (
-                    <TableRow key={pago.id}>
-                      <TableCell>
-                        {new Date(pago.fechaPago).toLocaleDateString("es-GT", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </TableCell>
-                      <TableCell className="font-medium">Q{pago.monto.toFixed(2)}</TableCell>
-                      <TableCell className="capitalize">{pago.metodoPago}</TableCell>
-                      <TableCell>{pago.referencia || "-"}</TableCell>
-                      <TableCell>{pago.observaciones || "-"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="text-center text-muted-foreground py-4">
-                No se han registrado pagos para esta venta.
-              </p>
-            )}
+                ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       )}
 
-      <RegistrarPagoDialog
+      <AgregarPagoDialog
         open={showPagoDialog}
         onOpenChange={setShowPagoDialog}
-        venta={venta}
-        onPagoRegistrado={handlePagoRegistrado}
+        facturaId={factura.id}
+        saldoPendiente={factura.saldo_pendiente}
+        onPagoAgregado={handlePagoAgregado}
       />
     </div>
   )

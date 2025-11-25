@@ -52,12 +52,14 @@ interface ProductoPiedrinera {
   descripcion?: string
   tipo: string
   granulometria?: string
-  precioVentaPorMetroCubico: number
-  costoProduccionPorMetroCubico: number
-  stockActualMetrosCubicos: number
-  stockMinimoMetrosCubicos: number
+  precioVenta: number
+  stock: number
+  stockMinimo: number
   activo: boolean
-  ultimaActualizacion: string
+  ubicacion?: string
+  calidad?: string
+  proveedor?: string
+  ultimaActualizacion?: string
 }
 
 interface ProductosStats {
@@ -145,39 +147,20 @@ export default function InventarioPiedrineraPage() {
         }
 
         const mappedProductos = productosData.map((producto: any) => ({
-          id: producto.id ?? producto.pk ?? "",
+          id: String(producto.id ?? producto.pk ?? ""),
           codigo: producto.codigo ?? "",
           nombre: producto.nombre ?? "",
-          descripcion: producto.descripcion ?? "",
+          descripcion: producto.descripcion ?? null,
           tipo: producto.tipo ?? "",
-          granulometria: producto.granulometria ?? "",
-          precioVentaPorMetroCubico:
-            producto.precio_venta_por_metro_cubico ??
-            producto.precio_venta ??
-            producto.precioVentaPorMetroCubico ??
-            0,
-          costoProduccionPorMetroCubico:
-            producto.costo_produccion_por_metro_cubico ??
-            producto.costo_produccion ??
-            producto.costoProduccionPorMetroCubico ??
-            0,
-          stockActualMetrosCubicos:
-            producto.stock_actual_metros_cubicos ??
-            producto.stock_actual ??
-            producto.stockActualMetrosCubicos ??
-            0,
-          stockMinimoMetrosCubicos:
-            producto.stock_minimo_metros_cubicos ??
-            producto.stock_minimo ??
-            producto.stockMinimoMetrosCubicos ??
-            0,
+          granulometria: producto.granulometria ?? null,
+          precioVenta: producto.precioVenta ?? producto.precio_venta ?? 0,
+          stock: producto.stock ?? producto.stock_actual ?? 0,
+          stockMinimo: producto.stockMinimo ?? producto.stock_minimo ?? 0,
           activo: producto.activo !== undefined ? producto.activo : true,
-          ultimaActualizacion:
-            producto.updated_at ??
-            producto.ultimaActualizacion ??
-            producto.fecha_actualizacion ??
-            producto.created_at ??
-            "",
+          ubicacion: producto.ubicacion ?? null,
+          calidad: producto.calidad ?? null,
+          proveedor: producto.proveedor ?? null,
+          ultimaActualizacion: producto.updated_at ?? producto.ultimaActualizacion ?? producto.fecha_actualizacion ?? producto.created_at ?? null,
         }))
 
         let statsData: ProductosStats | null = null
@@ -355,8 +338,8 @@ export default function InventarioPiedrineraPage() {
 
       const matchesEstado =
         filters.estado === "todos" ||
-        (filters.estado === "bajo" && producto.stockActualMetrosCubicos <= (producto.stockMinimoMetrosCubicos || 0)) ||
-        (filters.estado === "suficiente" && producto.stockActualMetrosCubicos > (producto.stockMinimoMetrosCubicos || 0))
+        (filters.estado === "bajo" && producto.stock <= (producto.stockMinimo || 0)) ||
+        (filters.estado === "suficiente" && producto.stock > (producto.stockMinimo || 0))
 
       const matchesTipo =
         filters.tipo === "todos" ||
@@ -373,12 +356,12 @@ export default function InventarioPiedrineraPage() {
 
   const totalArticulos = stats?.total_productos ?? productos.length
   const agregadosActivos = stats?.productos_activos ?? productos.filter((p) => p.activo).length
-  const stockBajo = stats?.productos_stock_bajo ?? productos.filter((p) => p.stockActualMetrosCubicos <= (p.stockMinimoMetrosCubicos || 0)).length
+  const stockBajo = stats?.productos_stock_bajo ?? productos.filter((p) => p.stock <= (p.stockMinimo || 0)).length
   const stockTotalMetrosCubicos =
-    stats?.stock_total_metros_cubicos ?? productos.reduce((sum, p) => sum + (p.stockActualMetrosCubicos || 0), 0)
+    stats?.stock_total_metros_cubicos ?? productos.reduce((sum, p) => sum + (p.stock || 0), 0)
   const valorTotalInventario =
     stats?.valor_total ??
-    productos.reduce((sum, p) => sum + (p.stockActualMetrosCubicos || 0) * (p.costoProduccionPorMetroCubico || 0), 0)
+    productos.reduce((sum, p) => sum + (p.stock || 0) * (p.precioVenta || 0), 0)
 
   if (loading) {
     return (
@@ -423,11 +406,11 @@ export default function InventarioPiedrineraPage() {
               </>
             )}
           </Button>
-          <Link href="/piedrinera/inventario/ajustar">
-            <Button>
-              <PlusCircle className="mr-2 h-4 w-4" /> Ajustar Inventario
-            </Button>
-          </Link>
+        <Link href="/piedrinera/inventario/ajustar">
+          <Button>
+            <PlusCircle className="mr-2 h-4 w-4" /> Ajustar Inventario
+          </Button>
+        </Link>
         </div>
       </div>
 
@@ -487,13 +470,13 @@ export default function InventarioPiedrineraPage() {
         <CardContent>
           <div className="flex flex-col gap-4 mb-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="search"
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
                   placeholder="Buscar por código, nombre, tipo o granulometría..."
-                  className="w-full rounded-lg bg-background pl-8"
-                  value={searchTerm}
+                className="w-full rounded-lg bg-background pl-8"
+                value={searchTerm}
                   onChange={(e) => handleSearchChange(e.target.value)}
                 />
               </div>
@@ -602,13 +585,16 @@ export default function InventarioPiedrineraPage() {
                 <TableHead>Granulometría</TableHead>
                 <TableHead>Stock (m³)</TableHead>
                 <TableHead>Stock Mínimo (m³)</TableHead>
+                <TableHead>Ubicación</TableHead>
+                <TableHead>Calidad</TableHead>
+                <TableHead>Proveedor</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {paginatedProductos.map((producto) => {
-                const stockBajoProducto = producto.stockActualMetrosCubicos <= (producto.stockMinimoMetrosCubicos || 0)
+                const stockBajoProducto = producto.stock <= (producto.stockMinimo || 0)
                 return (
                   <TableRow key={producto.id} className={!producto.activo ? "opacity-75 bg-muted/30" : ""}>
                     <TableCell className="font-medium">{producto.codigo}</TableCell>
@@ -618,20 +604,31 @@ export default function InventarioPiedrineraPage() {
                     <TableCell>
                       <div className="flex flex-col">
                         <span className={stockBajoProducto ? "text-red-600 font-semibold" : ""}>
-                          {producto.stockActualMetrosCubicos.toFixed(2)} m³
+                          {producto.stock.toFixed(2)} m³
                         </span>
                         {stockBajoProducto && (
                           <span className="text-xs text-muted-foreground">Necesita reposición</span>
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>{producto.stockMinimoMetrosCubicos.toFixed(2)} m³</TableCell>
+                    <TableCell>{producto.stockMinimo.toFixed(2)} m³</TableCell>
+                    <TableCell>{producto.ubicacion || "-"}</TableCell>
                     <TableCell>
+                      {producto.calidad ? (
+                        <Badge variant={producto.calidad === "Excelente" ? "default" : producto.calidad === "Buena" ? "secondary" : "outline"}>
+                          {producto.calidad}
+                        </Badge>
+                      ) : (
+                        "-"
+                      )}
+                    </TableCell>
+                    <TableCell>{producto.proveedor || "-"}</TableCell>
+                  <TableCell>
                       <Badge variant={stockBajoProducto ? "destructive" : "secondary"}>
                         {stockBajoProducto ? "Bajo" : "Suficiente"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Link href={`/piedrinera/productos/${producto.id}`}>
                           <Button variant="outline" size="sm">
@@ -644,13 +641,13 @@ export default function InventarioPiedrineraPage() {
                           </Button>
                         </Link>
                         <Link href={`/piedrinera/inventario/ajustar`}>
-                          <Button variant="outline" size="sm">
-                            Ajustar
-                          </Button>
-                        </Link>
+                      <Button variant="outline" size="sm">
+                        Ajustar
+                      </Button>
+                    </Link>
                       </div>
-                    </TableCell>
-                  </TableRow>
+                  </TableCell>
+                </TableRow>
                 )
               })}
             </TableBody>

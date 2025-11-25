@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { PlusCircle, XCircle } from "lucide-react"
+import { PlusCircle, XCircle, Search, Loader2 } from "lucide-react"
 import { getSampleProductosFerreteria, getSampleClientesFerreteria } from "@/lib/sample-data"
 import { useToast } from "@/hooks/use-toast"
 import { TipoVenta } from "@/types/database"
@@ -27,125 +27,263 @@ interface VentaItem {
 export default function NuevaVentaPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const productosDisponibles = getSampleProductosFerreteria()
-  const clientesDisponibles = getSampleClientesFerreteria()
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+
+  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [productosDisponibles, setProductosDisponibles] = useState<ProductoDisponible[]>([])
+  const [empresaFiltro, setEmpresaFiltro] = useState<"TODAS" | "FERRETERIA" | "BLOQUERA" | "PIEDRINERA">("TODAS")
+  const [searchProducto, setSearchProducto] = useState("")
 
   const [clienteSeleccionado, setClienteSeleccionado] = useState<string>("")
-  const [fechaVenta, setFechaVenta] = useState<string>(new Date().toISOString().split("T")[0])
-  const [tipoVenta, setTipoVenta] = useState<TipoVenta>(TipoVenta.CONTADO)
   const [fechaVencimiento, setFechaVencimiento] = useState<string>("")
-  const [itemsVenta, setItemsVenta] = useState<VentaItem[]>([])
+  const [detalles, setDetalles] = useState<DetalleFactura[]>([])
   const [productoSeleccionado, setProductoSeleccionado] = useState<string>("")
   const [cantidadProducto, setCantidadProducto] = useState<number>(1)
-  const [notas, setNotas] = useState<string>("")
+  const [precioProducto, setPrecioProducto] = useState<number>(0)
+  const [descuento, setDescuento] = useState<number>(0)
+  const [observaciones, setObservaciones] = useState<string>("")
 
-  // Calcular fecha de vencimiento por defecto (30 días después)
-  const calcularFechaVencimiento = () => {
-    const fecha = new Date()
-    fecha.setDate(fecha.getDate() + 30)
-    return fecha.toISOString().split("T")[0]
-  }
+  // Cargar datos al montar
+  useEffect(() => {
+    loadClientes()
+    loadProductos()
+  }, [])
 
-  // Actualizar fecha de vencimiento cuando cambia el tipo de venta
-  const handleTipoVentaChange = (nuevoTipo: TipoVenta) => {
-    setTipoVenta(nuevoTipo)
-    if (nuevoTipo === TipoVenta.CREDITO && !fechaVencimiento) {
-      setFechaVencimiento(calcularFechaVencimiento())
-    } else if (nuevoTipo === TipoVenta.CONTADO) {
-      setFechaVencimiento("")
+  const loadClientes = async () => {
+    try {
+      const data = await apiGet<any>(API_ENDPOINTS.FERRETERIA.CLIENTES)
+      const clientesData = Array.isArray(data) ? data : data?.results || data?.data || []
+      setClientes(clientesData)
+    } catch (error) {
+      console.error("Error al cargar clientes:", error)
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los clientes",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleAddProduct = () => {
-    const product = productosDisponibles.find((p) => p.id === productoSeleccionado)
-    if (product && cantidadProducto > 0) {
-      const existingItemIndex = itemsVenta.findIndex((item) => item.productoId === product.id)
+  const loadProductos = async () => {
+    try {
+      const [ferreteria, bloquera, piedrinera] = await Promise.allSettled([
+        apiGet<any>(API_ENDPOINTS.FERRETERIA.PRODUCTOS),
+        apiGet<any>(API_ENDPOINTS.BLOQUERA.PRODUCTOS),
+        apiGet<any>(API_ENDPOINTS.PIEDRINERA.PRODUCTOS),
+      ])
 
-      if (existingItemIndex > -1) {
-        // Update existing item
-        const updatedItems = [...itemsVenta]
-        updatedItems[existingItemIndex].cantidad += cantidadProducto
-        updatedItems[existingItemIndex].subtotal =
-          updatedItems[existingItemIndex].cantidad * updatedItems[existingItemIndex].precioUnitario
-        setItemsVenta(updatedItems)
-      } else {
-        // Add new item
-        setItemsVenta([
-          ...itemsVenta,
-          {
-            productoId: product.id,
-            nombreProducto: product.nombre,
-            cantidad: cantidadProducto,
-            precioUnitario: product.precioVenta,
-            subtotal: cantidadProducto * product.precioVenta,
-          },
-        ])
+      const productos: ProductoDisponible[] = []
+
+      if (ferreteria.status === "fulfilled") {
+        const data = ferreteria.value
+        const productosData = Array.isArray(data) ? data : data?.results || data?.data || []
+        productosData.forEach((p: any) => {
+          if (p.activo && (p.stockActual || p.stock || 0) > 0) {
+            productos.push({
+              id: p.id,
+              codigo: p.codigo || "",
+              nombre: p.nombre || "",
+              precioVenta: p.precioVenta || p.precio_venta || 0,
+              stock: p.stockActual || p.stock || 0,
+              empresa: "FERRETERIA",
+              unidadMedida: p.unidadMedida || p.unidad_medida || "unidades",
+            })
+          }
+        })
       }
-      setProductoSeleccionado("")
-      setCantidadProducto(1)
+
+      if (bloquera.status === "fulfilled") {
+        const data = bloquera.value
+        const productosData = Array.isArray(data) ? data : data?.results || data?.data || []
+        productosData.forEach((p: any) => {
+          if (p.activo && (p.stockActual || p.stock || 0) > 0) {
+            productos.push({
+              id: p.id,
+              codigo: p.codigo || "",
+              nombre: p.nombre || "",
+              precioVenta: p.precioVentaUnitario || p.precio_venta_unitario || 0,
+              stock: p.stockActual || p.stock || 0,
+              empresa: "BLOQUERA",
+              unidadMedida: "unidades",
+            })
+          }
+        })
+      }
+
+      if (piedrinera.status === "fulfilled") {
+        const data = piedrinera.value
+        const productosData = Array.isArray(data) ? data : data?.results || data?.data || []
+        productosData.forEach((p: any) => {
+          if (p.activo && (p.stock || p.stockActual || 0) > 0) {
+            productos.push({
+              id: p.id,
+              codigo: p.codigo || "",
+              nombre: p.nombre || "",
+              precioVenta: p.precioVenta || p.precio_venta || 0,
+              stock: p.stock || p.stockActual || 0,
+              empresa: "PIEDRINERA",
+              unidadMedida: "m³",
+            })
+          }
+        })
+      }
+
+      setProductosDisponibles(productos)
+    } catch (error) {
+      console.error("Error al cargar productos:", error)
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los productos",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const productosFiltrados = productosDisponibles.filter((p) => {
+    const matchesEmpresa = empresaFiltro === "TODAS" || p.empresa === empresaFiltro
+    const matchesSearch =
+      !searchProducto ||
+      p.nombre.toLowerCase().includes(searchProducto.toLowerCase()) ||
+      p.codigo.toLowerCase().includes(searchProducto.toLowerCase())
+    return matchesEmpresa && matchesSearch && p.stock > 0
+  })
+
+  const handleProductoChange = (productoId: string) => {
+    setProductoSeleccionado(productoId)
+    const producto = productosDisponibles.find((p) => String(p.id) === productoId)
+    if (producto) {
+      setPrecioProducto(producto.precioVenta)
+    }
+  }
+
+  const handleAgregarProducto = () => {
+    if (!productoSeleccionado || cantidadProducto <= 0) {
+      toast({
+        title: "Error",
+        description: "Selecciona un producto y una cantidad válida",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const producto = productosDisponibles.find((p) => String(p.id) === productoSeleccionado)
+    if (!producto) return
+
+    if (cantidadProducto > producto.stock) {
+      toast({
+        title: "Stock insuficiente",
+        description: `Stock disponible: ${producto.stock} ${producto.unidadMedida || ""}`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    const precio = precioProducto > 0 ? precioProducto : producto.precioVenta
+    const subtotal = cantidadProducto * precio
+
+    const existeIndex = detalles.findIndex(
+      (d) => d.producto_id === producto.id && d.producto_empresa === producto.empresa
+    )
+
+    if (existeIndex >= 0) {
+      const nuevosDetalles = [...detalles]
+      nuevosDetalles[existeIndex].cantidad += cantidadProducto
+      nuevosDetalles[existeIndex].subtotal = nuevosDetalles[existeIndex].cantidad * nuevosDetalles[existeIndex].precio_unitario
+      setDetalles(nuevosDetalles)
     } else {
-      toast({
-        title: "Error al agregar producto",
-        description: "Por favor, selecciona un producto y una cantidad válida.",
-        variant: "destructive",
-      })
+      setDetalles([
+        ...detalles,
+        {
+          producto_id: producto.id,
+          producto_empresa: producto.empresa,
+          producto_codigo: producto.codigo,
+          producto_nombre: producto.nombre,
+          cantidad: cantidadProducto,
+          precio_unitario: precio,
+          descuento: 0,
+          subtotal: subtotal,
+        },
+      ])
     }
+
+    setProductoSeleccionado("")
+    setCantidadProducto(1)
+    setPrecioProducto(0)
   }
 
-  const handleRemoveProduct = (productId: string) => {
-    setItemsVenta(itemsVenta.filter((item) => item.productoId !== productId))
+  const handleEliminarDetalle = (index: number) => {
+    setDetalles(detalles.filter((_, i) => i !== index))
   }
 
-  const calculateTotal = () => {
-    return itemsVenta.reduce((sum, item) => sum + item.subtotal, 0)
+  const calcularSubtotal = () => {
+    return detalles.reduce((sum, d) => sum + d.subtotal, 0)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const calcularTotal = () => {
+    return calcularSubtotal() - descuento
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!clienteSeleccionado || itemsVenta.length === 0) {
+
+    if (!clienteSeleccionado) {
       toast({
-        title: "Error de validación",
-        description: "Por favor, selecciona un cliente y añade al menos un producto.",
+        title: "Error",
+        description: "Selecciona un cliente",
         variant: "destructive",
       })
       return
     }
 
-    if (tipoVenta === TipoVenta.CREDITO && !fechaVencimiento) {
+    if (detalles.length === 0) {
       toast({
-        title: "Error de validación",
-        description: "Por favor, ingresa la fecha de vencimiento para ventas a crédito.",
+        title: "Error",
+        description: "Agrega al menos un producto",
         variant: "destructive",
       })
       return
     }
 
-    const newVenta = {
-      id: `venta-${Date.now()}`, // Generar un ID único
-      codigo: `V-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)
-        .toString()
-        .padStart(4, "0")}`,
-      fecha: fechaVenta,
-      cliente: clientesDisponibles.find((c) => c.id === clienteSeleccionado)?.nombre || "Cliente Desconocido",
-      clienteId: clienteSeleccionado,
-      total: calculateTotal(),
-      estado: tipoVenta === TipoVenta.CONTADO ? "Completada" : "Pendiente",
-      tipoVenta: tipoVenta,
-      fechaVencimiento: tipoVenta === TipoVenta.CREDITO ? fechaVencimiento : undefined,
-      montoPagado: tipoVenta === TipoVenta.CONTADO ? calculateTotal() : 0,
-      saldoPendiente: tipoVenta === TipoVenta.CREDITO ? calculateTotal() : 0,
-      estadoPago: tipoVenta === TipoVenta.CONTADO ? "pagado" : "pendiente",
-      items: itemsVenta,
-      notas: notas,
-    }
+    try {
+      setSubmitting(true)
 
-    console.log("Nueva Venta:", newVenta)
-    // Aquí integrarías con tu backend para guardar la venta
-    toast({
-      title: "Venta Creada",
-      description: `La venta ${newVenta.codigo} ha sido registrada exitosamente.`,
-    })
-    router.push("/ferreteria/ventas")
+      const facturaData = {
+        cliente: Number(clienteSeleccionado),
+        descuento: descuento || 0,
+        observaciones: observaciones.trim() || undefined,
+        fecha_vencimiento: fechaVencimiento || undefined,
+        detalles: detalles.map((d) => ({
+          producto_id: d.producto_id,
+          producto_empresa: d.producto_empresa,
+          cantidad: d.cantidad,
+          precio_unitario: d.precio_unitario,
+          descuento: d.descuento || 0,
+        })),
+      }
+
+      const factura = await apiPost<any>(API_ENDPOINTS.FACTURACION.FACTURAS, facturaData)
+
+      toast({
+        title: "Factura Creada",
+        description: `Factura ${factura.numero_factura} creada exitosamente`,
+      })
+
+      router.push(`/ferreteria/ventas/${factura.id}`)
+    } catch (error: any) {
+      console.error("Error al crear factura:", error)
+      const errorMessage =
+        error.message || error.response?.data?.error || "No se pudo crear la factura"
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -166,56 +304,35 @@ export default function NuevaVentaPage() {
                   <SelectValue placeholder="Selecciona un cliente" />
                 </SelectTrigger>
                 <SelectContent>
-                  {clientesDisponibles.map((cliente) => (
-                    <SelectItem key={cliente.id} value={cliente.id}>
-                      {cliente.nombre} ({cliente.nit})
-                    </SelectItem>
-                  ))}
+                  {loading ? (
+                    <SelectItem value="loading" disabled>Cargando...</SelectItem>
+                  ) : (
+                    clientes.map((cliente) => (
+                      <SelectItem key={cliente.id} value={String(cliente.id)}>
+                        {cliente.nombre} {cliente.nit && `(${cliente.nit})`}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="fecha">Fecha de Venta</Label>
+              <Label htmlFor="fechaVencimiento">Fecha de Vencimiento (Opcional)</Label>
               <Input
-                id="fecha"
+                id="fechaVencimiento"
                 type="date"
-                value={fechaVenta}
-                onChange={(e) => setFechaVenta(e.target.value)}
-                required
+                value={fechaVencimiento}
+                onChange={(e) => setFechaVencimiento(e.target.value)}
+                min={new Date().toISOString().split("T")[0]}
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="tipoVenta">Tipo de Venta</Label>
-              <Select value={tipoVenta} onValueChange={(value) => handleTipoVentaChange(value as TipoVenta)}>
-                <SelectTrigger id="tipoVenta">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={TipoVenta.CONTADO}>Contado</SelectItem>
-                  <SelectItem value={TipoVenta.CREDITO}>Crédito / Fiado</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {tipoVenta === TipoVenta.CREDITO && (
-              <div className="grid gap-2">
-                <Label htmlFor="fechaVencimiento">Fecha de Vencimiento</Label>
-                <Input
-                  id="fechaVencimiento"
-                  type="date"
-                  value={fechaVencimiento}
-                  onChange={(e) => setFechaVencimiento(e.target.value)}
-                  min={fechaVenta}
-                  required
-                />
-              </div>
-            )}
             <div className="grid gap-2 md:col-span-2">
-              <Label htmlFor="notas">Notas Adicionales</Label>
+              <Label htmlFor="observaciones">Observaciones</Label>
               <Textarea
-                id="notas"
-                placeholder="Cualquier nota relevante sobre la venta..."
-                value={notas}
-                onChange={(e) => setNotas(e.target.value)}
+                id="observaciones"
+                placeholder="Notas adicionales sobre la factura..."
+                value={observaciones}
+                onChange={(e) => setObservaciones(e.target.value)}
               />
             </div>
           </CardContent>
@@ -226,17 +343,50 @@ export default function NuevaVentaPage() {
             <CardTitle>Productos de la Venta</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
-            <div className="grid gap-2 md:grid-cols-[3fr_1fr_auto]">
+            <div className="grid gap-2 md:grid-cols-4">
+              <div>
+                <Label>Empresa</Label>
+                <Select value={empresaFiltro} onValueChange={(value: any) => setEmpresaFiltro(value)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="TODAS">Todas</SelectItem>
+                    <SelectItem value="FERRETERIA">Ferretería</SelectItem>
+                    <SelectItem value="BLOQUERA">Bloquera</SelectItem>
+                    <SelectItem value="PIEDRINERA">Piedrinera</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="md:col-span-2">
+                <Label>Buscar Producto</Label>
+                <div className="relative">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por código o nombre..."
+                    value={searchProducto}
+                    onChange={(e) => setSearchProducto(e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="grid gap-2 md:grid-cols-[3fr_1fr_1fr_auto]">
               <div className="grid gap-2">
                 <Label htmlFor="producto">Producto</Label>
-                <Select value={productoSeleccionado} onValueChange={setProductoSeleccionado}>
+                <Select value={productoSeleccionado} onValueChange={handleProductoChange}>
                   <SelectTrigger id="producto">
                     <SelectValue placeholder="Selecciona un producto" />
                   </SelectTrigger>
                   <SelectContent>
-                    {productosDisponibles.map((producto) => (
-                      <SelectItem key={producto.id} value={producto.id}>
-                        {producto.nombre} (Q{producto.precioVenta.toFixed(2)}) - Stock: {producto.stockActual}
+                    {productosFiltrados.map((producto) => (
+                      <SelectItem key={`${producto.empresa}-${producto.id}`} value={String(producto.id)}>
+                        <div className="flex flex-col">
+                          <span>{producto.nombre}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {producto.codigo} - Stock: {producto.stock} {producto.unidadMedida}
+                          </span>
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -247,39 +397,75 @@ export default function NuevaVentaPage() {
                 <Input
                   id="cantidad"
                   type="number"
+                  min="0.01"
+                  step={productoSeleccionado && productosDisponibles.find(p => String(p.id) === productoSeleccionado)?.empresa === "PIEDRINERA" ? "0.01" : "1"}
                   value={cantidadProducto}
                   onChange={(e) => setCantidadProducto(Number(e.target.value))}
-                  min="1"
                   required
                 />
               </div>
+              <div className="grid gap-2">
+                <Label htmlFor="precio">Precio Unitario</Label>
+                <Input
+                  id="precio"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={precioProducto}
+                  onChange={(e) => setPrecioProducto(Number(e.target.value))}
+                  placeholder="0.00"
+                />
+              </div>
               <div className="flex items-end">
-                <Button type="button" onClick={handleAddProduct}>
+                <Button type="button" onClick={handleAgregarProducto}>
                   <PlusCircle className="mr-2 h-4 w-4" /> Agregar
                 </Button>
               </div>
             </div>
 
-            {itemsVenta.length > 0 && (
+            {detalles.length > 0 && (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Producto</TableHead>
+                    <TableHead>Empresa</TableHead>
                     <TableHead>Cantidad</TableHead>
                     <TableHead>Precio Unitario</TableHead>
-                    <TableHead>Subtotal</TableHead>
+                    <TableHead className="text-right">Subtotal</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {itemsVenta.map((item) => (
-                    <TableRow key={item.productoId}>
-                      <TableCell className="font-medium">{item.nombreProducto}</TableCell>
-                      <TableCell>{item.cantidad}</TableCell>
-                      <TableCell>Q{item.precioUnitario.toFixed(2)}</TableCell>
-                      <TableCell>Q{item.subtotal.toFixed(2)}</TableCell>
+                  {detalles.map((detalle, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{detalle.producto_nombre}</div>
+                          <div className="text-xs text-muted-foreground">{detalle.producto_codigo}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          className={
+                            detalle.producto_empresa === "FERRETERIA"
+                              ? "bg-blue-500"
+                              : detalle.producto_empresa === "BLOQUERA"
+                              ? "bg-green-500"
+                              : "bg-orange-500"
+                          }
+                        >
+                          {detalle.producto_empresa}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{detalle.cantidad}</TableCell>
+                      <TableCell>
+                        Q {detalle.precio_unitario.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => handleRemoveProduct(item.productoId)}>
+                        Q {detalle.subtotal.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" onClick={() => handleEliminarDetalle(index)}>
                           <XCircle className="h-4 w-4 text-red-500" />
                           <span className="sr-only">Eliminar</span>
                         </Button>
@@ -289,7 +475,7 @@ export default function NuevaVentaPage() {
                 </TableBody>
               </Table>
             )}
-            {itemsVenta.length === 0 && (
+            {detalles.length === 0 && (
               <p className="text-center text-muted-foreground">No hay productos añadidos a la venta.</p>
             )}
           </CardContent>
@@ -299,17 +485,49 @@ export default function NuevaVentaPage() {
           <CardHeader>
             <CardTitle>Resumen de la Venta</CardTitle>
           </CardHeader>
-          <CardContent className="flex justify-between items-center">
-            <Label className="text-lg font-semibold">Total:</Label>
-            <span className="text-2xl font-bold">Q{calculateTotal().toFixed(2)}</span>
+          <CardContent className="space-y-2">
+            <div className="flex justify-between">
+              <span>Subtotal:</span>
+              <span className="font-medium">
+                Q {calcularSubtotal().toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <Label>Descuento:</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={descuento}
+                  onChange={(e) => setDescuento(Number(e.target.value))}
+                  className="w-32"
+                />
+              </div>
+            </div>
+            <div className="flex justify-between text-lg font-bold pt-2 border-t">
+              <span>Total:</span>
+              <span>
+                Q {calcularTotal().toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
           </CardContent>
         </Card>
 
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+          <Button type="button" variant="outline" onClick={() => router.back()} disabled={submitting}>
             Cancelar
           </Button>
-          <Button type="submit">Crear Venta</Button>
+          <Button type="submit" disabled={submitting || detalles.length === 0 || !clienteSeleccionado}>
+            {submitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creando...
+              </>
+            ) : (
+              "Crear Factura"
+            )}
+          </Button>
         </div>
       </form>
     </div>

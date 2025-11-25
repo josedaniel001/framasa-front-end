@@ -285,72 +285,72 @@ export default function ReportesPage() {
             <>
               {/* Resumen General */}
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Total Productos</CardTitle>
                     <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
+                  </CardHeader>
+                  <CardContent>
                     <div className="text-2xl font-bold">{inventarioUnificado.resumen_general.total_productos}</div>
                     <p className="text-xs text-muted-foreground">En todas las empresas</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Productos Activos</CardTitle>
                     <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
+                  </CardHeader>
+                  <CardContent>
                     <div className="text-2xl font-bold">{inventarioUnificado.resumen_general.productos_activos}</div>
                     <p className="text-xs text-muted-foreground">Disponibles para venta</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Stock Bajo</CardTitle>
                     <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
+                  </CardHeader>
+                  <CardContent>
                     <div className="text-2xl font-bold text-orange-600">
                       {inventarioUnificado.resumen_general.productos_stock_bajo}
                     </div>
                     <p className="text-xs text-muted-foreground">Necesitan reposición</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Valor Total</CardTitle>
                     <BarChart3 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
+                  </CardHeader>
+                  <CardContent>
                     <div className="text-2xl font-bold">
                       Q {formatNumber(inventarioUnificado.resumen_general.valor_inventario_total)}
-      </div>
+                    </div>
                     <p className="text-xs text-muted-foreground">Valor estimado del inventario</p>
-          </CardContent>
-        </Card>
-        <Card>
+                  </CardContent>
+                </Card>
+                <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Productos Inactivos</CardTitle>
                     <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
+                  </CardHeader>
+                  <CardContent>
                     <div className="text-2xl font-bold">{inventarioUnificado.resumen_general.productos_inactivos}</div>
                     <p className="text-xs text-muted-foreground">No disponibles</p>
-          </CardContent>
-        </Card>
-      </div>
+                  </CardContent>
+                </Card>
+              </div>
 
               {/* Desglose por Empresa */}
-        <Card>
-          <CardHeader>
+              <Card>
+                <CardHeader>
                   <CardTitle>Desglose por Empresa</CardTitle>
                   <CardDescription>Detalle del inventario por cada empresa</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
                         <TableHead>Empresa</TableHead>
                         <TableHead>Total Productos</TableHead>
                         <TableHead>Activos</TableHead>
@@ -358,9 +358,9 @@ export default function ReportesPage() {
                         <TableHead>Stock Mínimo</TableHead>
                         <TableHead>Stock Bajo</TableHead>
                         <TableHead className="text-right">Valor Inventario</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {inventarioUnificado.por_empresa.map((empresa) => (
                         <TableRow key={empresa.empresa}>
                           <TableCell className="font-medium">{getEmpresaBadge(empresa.empresa)}</TableCell>
@@ -379,25 +379,25 @@ export default function ReportesPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             Q {formatNumber(empresa.valor_inventario_estimado)}
-                    </TableCell>
-                  </TableRow>
+                          </TableCell>
+                        </TableRow>
                       ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
             </>
           )}
         </TabsContent>
 
         {/* Tab: Top Productos Vendidos */}
         <TabsContent value="top-productos" className="space-y-4">
-        <Card>
-          <CardHeader>
+          <Card>
+            <CardHeader>
               <CardTitle>Top Productos Más Vendidos</CardTitle>
               <CardDescription>Ranking de productos con mayor volumen de ventas</CardDescription>
-          </CardHeader>
-          <CardContent>
+            </CardHeader>
+            <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 <div>
                   <Label>Empresa</Label>
@@ -459,17 +459,17 @@ export default function ReportesPage() {
               </Button>
 
               {topProductos.length > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
                       <TableHead>#</TableHead>
                       <TableHead>Producto</TableHead>
                       <TableHead>Empresa</TableHead>
                       <TableHead>Cantidad Vendida</TableHead>
                       <TableHead className="text-right">Valor Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {topProductos.map((producto, index) => (
                       <TableRow key={producto.producto_id}>
                         <TableCell className="font-medium">{index + 1}</TableCell>
@@ -482,32 +482,32 @@ export default function ReportesPage() {
                         <TableCell>{getEmpresaBadge(producto.empresa)}</TableCell>
                         <TableCell>
                           {formatNumber(producto.cantidad_vendida, producto.unidades === "m³" ? 2 : 0)} {producto.unidades}
-                    </TableCell>
+                        </TableCell>
                         <TableCell className="text-right">Q {formatNumber(producto.valor_total)}</TableCell>
-                  </TableRow>
+                      </TableRow>
                     ))}
-              </TableBody>
-            </Table>
+                  </TableBody>
+                </Table>
               )}
               {topProductos.length === 0 && !loadingTop && (
                 <p className="text-center text-muted-foreground py-8">
                   No hay datos disponibles. Haz clic en "Generar Reporte" para cargar los datos.
                 </p>
               )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Tab: Estadísticas Predictivas */}
         <TabsContent value="predictivas" className="space-y-4">
-      <Card>
-        <CardHeader>
+          <Card>
+            <CardHeader>
               <CardTitle>Estadísticas Predictivas</CardTitle>
               <CardDescription>
                 Análisis predictivo basado en historial de ventas y tendencias de stock
               </CardDescription>
-        </CardHeader>
-        <CardContent>
+            </CardHeader>
+            <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div>
                   <Label>Empresa</Label>
@@ -621,10 +621,11 @@ export default function ReportesPage() {
                   No hay datos disponibles. Haz clic en "Generar Análisis" para cargar las estadísticas.
                 </p>
               )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
   )
 }
+

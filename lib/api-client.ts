@@ -45,7 +45,23 @@ export async function apiGet<T>(endpoint: string): Promise<T> {
   const response = await apiFetch(endpoint, { method: 'GET' })
   
   if (!response.ok) {
-    throw new Error(`API Error: ${response.status} ${response.statusText}`)
+    let errorMessage = `API Error: ${response.status} ${response.statusText}`
+    try {
+      const errorData = await response.json()
+      if (errorData.error) {
+        errorMessage = errorData.error
+      } else if (errorData.detail) {
+        errorMessage = errorData.detail
+      } else if (typeof errorData === 'string') {
+        errorMessage = errorData
+      }
+    } catch {
+      // Si no se puede parsear el error, usar el mensaje por defecto
+    }
+    const error: any = new Error(errorMessage)
+    error.status = response.status
+    error.response = { data: await response.json().catch(() => ({})) }
+    throw error
   }
   
   return response.json()
