@@ -73,8 +73,7 @@ const navigationItems = [
     modulo: ModuloSistema.TALLER,
     items: [
       { title: "Órdenes", url: "/taller/ordenes" },
-      { title: "Materiales", url: "/taller/materiales" },
-      { title: "Servicios", url: "/taller/servicios" },
+      { title: "Compra de Repuestos", url: "/taller/compra-repuestos" },
     ],
   },
   {

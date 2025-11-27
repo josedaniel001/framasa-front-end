@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, use } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -10,18 +10,18 @@ import {
   ArrowLeft,
   Edit,
   Calendar,
-  Clock,
   User,
   Wrench,
   CheckCircle,
   DollarSign,
   FileText,
-  Settings,
+  ShoppingCart,
+  Package,
 } from "lucide-react"
 import Link from "next/link"
 
 // Datos simulados de la orden
-const ordenData = {
+const ordenDataInicial = {
   id: "ORD-001",
   numero: "OT-2024-001",
   equipo: "Excavadora CAT 320D",
@@ -31,43 +31,19 @@ const ordenData = {
   estado: "En Progreso",
   tecnico: "Carlos Méndez",
   fechaCreacion: "2024-01-15",
-  fechaEstimada: "2024-01-16",
-  fechaInicio: "2024-01-15T08:00",
-  horasEstimadas: 4,
-  horasReales: 2.5,
+  fechaInicio: "2024-01-15",
+  fechaEstimadaTerminacion: "2024-01-20",
+  fechaTerminacionReal: null as string | null,
   costo: 850.0,
-  progreso: 60,
   observaciones: "Revisar también el estado de las mangueras hidráulicas",
   materiales: [
     { nombre: "Aceite Motor 15W-40", cantidad: 20, unidad: "Litros", costo: 250.0 },
     { nombre: "Filtro de Aceite", cantidad: 1, unidad: "Unidad", costo: 85.0 },
     { nombre: "Filtro de Aire", cantidad: 1, unidad: "Unidad", costo: 65.0 },
   ],
-  historial: [
-    {
-      fecha: "2024-01-15T08:00",
-      accion: "Orden creada",
-      usuario: "Sistema",
-      detalle: "Orden generada automáticamente",
-    },
-    {
-      fecha: "2024-01-15T08:30",
-      accion: "Asignada a técnico",
-      usuario: "Supervisor",
-      detalle: "Asignada a Carlos Méndez",
-    },
-    {
-      fecha: "2024-01-15T09:00",
-      accion: "Trabajo iniciado",
-      usuario: "Carlos Méndez",
-      detalle: "Inicio de trabajos de mantenimiento",
-    },
-    {
-      fecha: "2024-01-15T11:30",
-      accion: "Progreso actualizado",
-      usuario: "Carlos Méndez",
-      detalle: "60% completado - Aceite cambiado",
-    },
+  repuestosExternos: [
+    { nombre: "Bujía NGK BKR6E-11", cantidad: 4 },
+    { nombre: "Mangueras hidráulicas", cantidad: 2 },
   ],
 }
 
@@ -92,8 +68,37 @@ const getPrioridadBadge = (prioridad: string) => {
   return variants[prioridad as keyof typeof variants] || variants["Media"]
 }
 
-export default function DetalleOrdenPage({ params }: { params: { id: string } }) {
-  const [orden] = useState(ordenData)
+export default function DetalleOrdenPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
+  const [orden, setOrden] = useState(ordenDataInicial)
+
+  // Calcular progreso basado en fechas
+  const calcularProgreso = () => {
+    if (!orden.fechaInicio || !orden.fechaEstimadaTerminacion) return 0
+
+    const inicio = new Date(orden.fechaInicio).getTime()
+    const fin = new Date(orden.fechaEstimadaTerminacion).getTime()
+    const ahora = orden.estado === "Completada" && orden.fechaTerminacionReal
+      ? new Date(orden.fechaTerminacionReal).getTime()
+      : new Date().getTime()
+
+    if (ahora < inicio) return 0
+    if (ahora >= fin || orden.estado === "Completada") return 100
+
+    const total = fin - inicio
+    const transcurrido = ahora - inicio
+    return Math.min(100, Math.max(0, Math.round((transcurrido / total) * 100)))
+  }
+
+  const progreso = calcularProgreso()
+
+  const handleCompletarOrden = () => {
+    setOrden({
+      ...orden,
+      estado: "Completada",
+      fechaTerminacionReal: new Date().toISOString(),
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -112,7 +117,7 @@ export default function DetalleOrdenPage({ params }: { params: { id: string } })
           </div>
         </div>
         <div className="flex gap-2">
-          <Link href={`/taller/ordenes/${params.id}/editar`}>
+          <Link href={`/taller/ordenes/${id}/editar`}>
             <Button>
               <Edit className="h-4 w-4 mr-2" />
               Editar
@@ -139,18 +144,34 @@ export default function DetalleOrdenPage({ params }: { params: { id: string } })
                 <span className="text-sm text-muted-foreground">Tipo: {orden.tipo}</span>
               </div>
 
-              {orden.estado === "En Progreso" && (
+              {orden.fechaInicio && orden.fechaEstimadaTerminacion && (
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span>Progreso del trabajo</span>
-                    <span>{orden.progreso}%</span>
+                    <span>{progreso}%</span>
                   </div>
-                  <Progress value={orden.progreso} className="h-2" />
+                  <Progress
+                    value={progreso}
+                    className={`h-2 ${
+                      orden.estado === "Completada"
+                        ? "[&>div]:bg-green-600"
+                        : progreso >= 100
+                          ? "[&>div]:bg-red-600"
+                          : "[&>div]:bg-blue-600"
+                    }`}
+                  />
+                  {orden.estado === "Completada" && (
+                    <div className="text-xs text-green-600 font-medium">
+                      <CheckCircle className="h-4 w-4 inline mr-1" />
+                      Trabajo completado exitosamente
+                    </div>
+                  )}
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span>
-                      {orden.horasReales}h trabajadas de {orden.horasEstimadas}h estimadas
+                      Inicio: {new Date(orden.fechaInicio).toLocaleDateString("es-GT")} | Fin:{" "}
+                      {new Date(orden.fechaEstimadaTerminacion).toLocaleDateString("es-GT")}
                     </span>
-                    <span>Costo actual: ${orden.costo.toLocaleString()}</span>
+                    <span>Costo actual: Q{orden.costo.toLocaleString()}</span>
                   </div>
                 </div>
               )}
@@ -180,7 +201,7 @@ export default function DetalleOrdenPage({ params }: { params: { id: string } })
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Settings className="h-5 w-5" />
+                <Package className="h-5 w-5" />
                 Materiales Utilizados
               </CardTitle>
             </CardHeader>
@@ -195,40 +216,48 @@ export default function DetalleOrdenPage({ params }: { params: { id: string } })
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-medium">${material.costo.toFixed(2)}</p>
+                      <p className="font-medium">Q{material.costo.toFixed(2)}</p>
                     </div>
                   </div>
                 ))}
                 <Separator />
                 <div className="flex justify-between font-medium">
                   <span>Total Materiales:</span>
-                  <span>${orden.materiales.reduce((sum, m) => sum + m.costo, 0).toFixed(2)}</span>
+                  <span>Q{orden.materiales.reduce((sum, m) => sum + m.costo, 0).toFixed(2)}</span>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Historial */}
+          {/* Listado de Repuestos y Materiales Externos */}
           <Card>
             <CardHeader>
-              <CardTitle>Historial de Actividades</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <ShoppingCart className="h-5 w-5" />
+                Listado de Repuestos y Materiales Externos
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {orden.historial.map((evento, index) => (
-                  <div key={index} className="flex gap-3">
-                    <div className="flex-shrink-0 w-2 h-2 bg-blue-600 rounded-full mt-2"></div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium">{evento.accion}</span>
-                        <span className="text-xs text-muted-foreground">{new Date(evento.fecha).toLocaleString()}</span>
+              {orden.repuestosExternos && orden.repuestosExternos.length > 0 ? (
+                <div className="space-y-3">
+                  {orden.repuestosExternos.map((repuesto, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div>
+                        <p className="font-medium">{repuesto.nombre}</p>
+                        {repuesto.cantidad && (
+                          <p className="text-sm text-muted-foreground">
+                            Cantidad: {repuesto.cantidad}
+                          </p>
+                        )}
                       </div>
-                      <p className="text-sm text-muted-foreground mb-1">{evento.detalle}</p>
-                      <p className="text-xs text-muted-foreground">Por: {evento.usuario}</p>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-center py-4">
+                  No hay repuestos y materiales externos registrados
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -277,14 +306,28 @@ export default function DetalleOrdenPage({ params }: { params: { id: string } })
                 <span className="text-muted-foreground">Creación:</span>
                 <span>{new Date(orden.fechaCreacion).toLocaleDateString()}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Estimada:</span>
-                <span>{new Date(orden.fechaEstimada).toLocaleDateString()}</span>
-              </div>
               {orden.fechaInicio && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Inicio:</span>
                   <span>{new Date(orden.fechaInicio).toLocaleDateString()}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Estimada de terminación:</span>
+                <span>{new Date(orden.fechaEstimadaTerminacion).toLocaleDateString()}</span>
+              </div>
+              {orden.estado === "Completada" && orden.fechaTerminacionReal && (
+                <div className="flex justify-between pt-2 border-t">
+                  <span className="text-muted-foreground font-medium">Terminación real:</span>
+                  <span className="font-medium text-green-600">
+                    {new Date(orden.fechaTerminacionReal).toLocaleDateString("es-GT", {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
                 </div>
               )}
             </CardContent>
@@ -301,16 +344,18 @@ export default function DetalleOrdenPage({ params }: { params: { id: string } })
             <CardContent className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Materiales:</span>
-                <span>${orden.materiales.reduce((sum, m) => sum + m.costo, 0).toFixed(2)}</span>
+                <span>Q{orden.materiales.reduce((sum, m) => sum + m.costo, 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Mano de obra:</span>
-                <span>${(orden.horasReales * 25).toFixed(2)}</span>
+                <span className="text-muted-foreground">Materiales y Repuestos Externos:</span>
+                <span>
+                  Q{(orden.costo - orden.materiales.reduce((sum, m) => sum + m.costo, 0)).toFixed(2)}
+                </span>
               </div>
               <Separator />
               <div className="flex justify-between font-medium">
                 <span>Total:</span>
-                <span>${orden.costo.toFixed(2)}</span>
+                <span>Q{orden.costo.toFixed(2)}</span>
               </div>
             </CardContent>
           </Card>
@@ -322,21 +367,16 @@ export default function DetalleOrdenPage({ params }: { params: { id: string } })
             </CardHeader>
             <CardContent className="space-y-2">
               <Button variant="outline" className="w-full justify-start bg-transparent">
-                <Clock className="h-4 w-4 mr-2" />
-                Actualizar Progreso
+                <ShoppingCart className="h-4 w-4 mr-2" />
+                Registrar repuestos y Materiales Externos
               </Button>
-              <Button variant="outline" className="w-full justify-start bg-transparent">
-                <Settings className="h-4 w-4 mr-2" />
-                Agregar Materiales
-              </Button>
-              <Button variant="outline" className="w-full justify-start bg-transparent">
-                <FileText className="h-4 w-4 mr-2" />
-                Generar Reporte
-              </Button>
-              {orden.estado === "En Progreso" && (
-                <Button className="w-full justify-start">
+              {orden.estado !== "Completada" && (
+                <Button
+                  className="w-full justify-start"
+                  onClick={handleCompletarOrden}
+                >
                   <CheckCircle className="h-4 w-4 mr-2" />
-                  Marcar como Completada
+                  Completar
                 </Button>
               )}
             </CardContent>

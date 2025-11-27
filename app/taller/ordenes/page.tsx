@@ -1,14 +1,20 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Plus,
   Search,
-  Filter,
   Eye,
   Edit,
   Clock,
@@ -19,6 +25,7 @@ import {
   XCircle,
   Calendar,
   DollarSign,
+  X,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -32,9 +39,8 @@ const ordenes = [
     estado: "En Progreso",
     tecnico: "Carlos Mendez",
     fechaCreacion: "2024-01-15",
-    fechaEstimada: "2024-01-16",
-    horasEstimadas: 4,
-    horasReales: 2.5,
+    fechaInicio: "2024-01-15",
+    fechaEstimadaTerminacion: "2024-01-16",
     costo: 850.0,
     progreso: 60,
   },
@@ -47,9 +53,8 @@ const ordenes = [
     estado: "Pendiente",
     tecnico: "Miguel Torres",
     fechaCreacion: "2024-01-14",
-    fechaEstimada: "2024-01-17",
-    horasEstimadas: 6,
-    horasReales: 0,
+    fechaInicio: "",
+    fechaEstimadaTerminacion: "2024-01-17",
     costo: 1200.0,
     progreso: 0,
   },
@@ -62,9 +67,9 @@ const ordenes = [
     estado: "Completada",
     tecnico: "Ana Rodriguez",
     fechaCreacion: "2024-01-10",
-    fechaEstimada: "2024-01-12",
-    horasEstimadas: 3,
-    horasReales: 3.5,
+    fechaInicio: "2024-01-10",
+    fechaEstimadaTerminacion: "2024-01-12",
+    fechaTerminacionReal: "2024-01-12T15:30",
     costo: 650.0,
     progreso: 100,
   },
@@ -77,9 +82,8 @@ const ordenes = [
     estado: "Programada",
     tecnico: "Luis Vargas",
     fechaCreacion: "2024-01-16",
-    fechaEstimada: "2024-01-18",
-    horasEstimadas: 8,
-    horasReales: 0,
+    fechaInicio: "",
+    fechaEstimadaTerminacion: "2024-01-18",
     costo: 2100.0,
     progreso: 0,
   },
@@ -92,24 +96,12 @@ const ordenes = [
     estado: "Cancelada",
     tecnico: "Pedro Jimenez",
     fechaCreacion: "2024-01-13",
-    fechaEstimada: "2024-01-15",
-    horasEstimadas: 2,
-    horasReales: 0,
+    fechaInicio: "",
+    fechaEstimadaTerminacion: "2024-01-15",
     costo: 0,
     progreso: 0,
   },
 ]
-
-const getEstadoBadge = (estado: string) => {
-  const variants = {
-    Pendiente: "bg-yellow-100 text-yellow-800 border-yellow-200",
-    Programada: "bg-blue-100 text-blue-800 border-blue-200",
-    "En Progreso": "bg-orange-100 text-orange-800 border-orange-200",
-    Completada: "bg-green-100 text-green-800 border-green-200",
-    Cancelada: "bg-red-100 text-red-800 border-red-200",
-  }
-  return variants[estado as keyof typeof variants] || variants["Pendiente"]
-}
 
 const getPrioridadBadge = (prioridad: string) => {
   const variants = {
@@ -121,37 +113,95 @@ const getPrioridadBadge = (prioridad: string) => {
   return variants[prioridad as keyof typeof variants] || variants["Media"]
 }
 
-const getEstadoIcon = (estado: string) => {
-  const icons = {
-    Pendiente: <Clock className="h-4 w-4" />,
-    Programada: <Calendar className="h-4 w-4" />,
-    "En Progreso": <Wrench className="h-4 w-4" />,
-    Completada: <CheckCircle className="h-4 w-4" />,
-    Cancelada: <XCircle className="h-4 w-4" />,
-  }
-  return icons[estado as keyof typeof icons] || icons["Pendiente"]
+// Calcular progreso basado en fechas
+const calcularProgreso = (fechaInicio: string, fechaFinEstimada: string): number => {
+  if (!fechaInicio || !fechaFinEstimada) return 0
+
+  const inicio = new Date(fechaInicio).getTime()
+  const fin = new Date(fechaFinEstimada).getTime()
+  const ahora = new Date().getTime()
+
+  if (ahora < inicio) return 0
+  if (ahora >= fin) return 100
+
+  const total = fin - inicio
+  const transcurrido = ahora - inicio
+  return Math.min(100, Math.max(0, Math.round((transcurrido / total) * 100)))
+}
+
+// Verificar si la fecha actual es mayor que la fecha de terminación estimada
+const estaVencida = (fechaFinEstimada: string): boolean => {
+  if (!fechaFinEstimada) return false
+  const fin = new Date(fechaFinEstimada)
+  const ahora = new Date()
+  ahora.setHours(0, 0, 0, 0)
+  fin.setHours(0, 0, 0, 0)
+  return ahora > fin
 }
 
 export default function OrdenesPage() {
   const [searchTerm, setSearchTerm] = useState("")
-  const [filtroEstado, setFiltroEstado] = useState("Todos")
+  const [filtroPeriodo, setFiltroPeriodo] = useState("General")
 
-  const ordenesFiltradas = ordenes.filter((orden) => {
-    const matchesSearch =
-      orden.equipo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      orden.descripcion.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      orden.tecnico.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesEstado = filtroEstado === "Todos" || orden.estado === filtroEstado
-    return matchesSearch && matchesEstado
-  })
+  // Filtrar órdenes según el período y búsqueda
+  const ordenesFiltradas = useMemo(() => {
+    let filtered = ordenes
 
-  const stats = {
-    total: ordenes.length,
-    pendientes: ordenes.filter((o) => o.estado === "Pendiente").length,
-    enProgreso: ordenes.filter((o) => o.estado === "En Progreso").length,
-    completadas: ordenes.filter((o) => o.estado === "Completada").length,
-    costoTotal: ordenes.reduce((sum, o) => sum + o.costo, 0),
+    // Filtro por período
+    if (filtroPeriodo !== "General") {
+      const hoy = new Date()
+      hoy.setHours(0, 0, 0, 0)
+
+      filtered = filtered.filter((orden) => {
+        const fechaCreacion = new Date(orden.fechaCreacion)
+        fechaCreacion.setHours(0, 0, 0, 0)
+
+        if (filtroPeriodo === "Hoy") {
+          return fechaCreacion.getTime() === hoy.getTime()
+        } else if (filtroPeriodo === "Esta Semana") {
+          const semanaAtras = new Date(hoy)
+          semanaAtras.setDate(hoy.getDate() - 7)
+          return fechaCreacion >= semanaAtras
+        } else if (filtroPeriodo === "Este Mes") {
+          return (
+            fechaCreacion.getMonth() === hoy.getMonth() &&
+            fechaCreacion.getFullYear() === hoy.getFullYear()
+          )
+        }
+        return true
+      })
+    }
+
+    // Filtro por búsqueda
+    if (searchTerm) {
+      filtered = filtered.filter(
+        (orden) =>
+          orden.equipo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          orden.descripcion.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          orden.tecnico.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+
+    return filtered
+  }, [searchTerm, filtroPeriodo])
+
+  // Calcular estadísticas basadas en órdenes filtradas
+  const stats = useMemo(() => {
+    return {
+      total: ordenesFiltradas.length,
+      pendientes: ordenesFiltradas.filter((o) => o.estado === "Pendiente").length,
+      enProgreso: ordenesFiltradas.filter((o) => o.estado === "En Progreso").length,
+      completadas: ordenesFiltradas.filter((o) => o.estado === "Completada").length,
+      costoTotal: ordenesFiltradas.reduce((sum, o) => sum + o.costo, 0),
+    }
+  }, [ordenesFiltradas])
+
+  const limpiarFiltros = () => {
+    setSearchTerm("")
+    setFiltroPeriodo("General")
   }
+
+  const tieneFiltrosActivos = searchTerm !== "" || filtroPeriodo !== "General"
 
   return (
     <div className="space-y-6">
@@ -224,7 +274,7 @@ export default function OrdenesPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Costo Total</p>
-                <p className="text-2xl font-bold">${stats.costoTotal.toLocaleString()}</p>
+                <p className="text-2xl font-bold">Q{stats.costoTotal.toLocaleString()}</p>
               </div>
               <DollarSign className="h-8 w-8 text-green-600" />
             </div>
@@ -248,22 +298,23 @@ export default function OrdenesPage() {
               </div>
             </div>
             <div className="flex gap-2">
-              <select
-                value={filtroEstado}
-                onChange={(e) => setFiltroEstado(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="Todos">Todos los estados</option>
-                <option value="Pendiente">Pendiente</option>
-                <option value="Programada">Programada</option>
-                <option value="En Progreso">En Progreso</option>
-                <option value="Completada">Completada</option>
-                <option value="Cancelada">Cancelada</option>
-              </select>
-              <Button variant="outline">
-                <Filter className="h-4 w-4 mr-2" />
-                Filtros
-              </Button>
+              <Select value={filtroPeriodo} onValueChange={setFiltroPeriodo}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="General">General</SelectItem>
+                  <SelectItem value="Este Mes">Este Mes</SelectItem>
+                  <SelectItem value="Esta Semana">Esta Semana</SelectItem>
+                  <SelectItem value="Hoy">Hoy</SelectItem>
+                </SelectContent>
+              </Select>
+              {tieneFiltrosActivos && (
+                <Button variant="outline" onClick={limpiarFiltros}>
+                  <X className="h-4 w-4 mr-2" />
+                  Quitar Filtros
+                </Button>
+              )}
             </div>
           </div>
         </CardContent>
@@ -278,11 +329,13 @@ export default function OrdenesPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h3 className="font-semibold text-lg">{orden.id}</h3>
-                    <Badge className={`${getEstadoBadge(orden.estado)} border`}>
-                      {getEstadoIcon(orden.estado)}
-                      <span className="ml-1">{orden.estado}</span>
-                    </Badge>
                     <Badge className={`${getPrioridadBadge(orden.prioridad)} border`}>{orden.prioridad}</Badge>
+                    {estaVencida(orden.fechaEstimadaTerminacion) && (
+                      <Badge variant="destructive" className="border">
+                        <AlertTriangle className="h-3 w-3 mr-1" />
+                        Vencida
+                      </Badge>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
@@ -302,29 +355,38 @@ export default function OrdenesPage() {
                       </p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Fecha Estimada</p>
-                      <p className="font-medium">{new Date(orden.fechaEstimada).toLocaleDateString()}</p>
+                      <p className="text-muted-foreground">Fecha Estimada Terminación</p>
+                      <p className="font-medium">{new Date(orden.fechaEstimadaTerminacion).toLocaleDateString()}</p>
                     </div>
                   </div>
 
-                  {/* Progreso */}
-                  {orden.estado === "En Progreso" && (
+                  {/* Progreso basado en fechas */}
+                  {orden.fechaInicio && orden.fechaEstimadaTerminacion && (
                     <div className="mt-4">
                       <div className="flex justify-between text-sm mb-1">
                         <span>Progreso</span>
-                        <span>{orden.progreso}%</span>
+                        <span>{calcularProgreso(orden.fechaInicio, orden.fechaEstimadaTerminacion)}%</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${orden.progreso}%` }}
+                          className={`h-2 rounded-full transition-all duration-300 ${
+                            estaVencida(orden.fechaEstimadaTerminacion)
+                              ? "bg-red-600"
+                              : calcularProgreso(orden.fechaInicio, orden.fechaEstimadaTerminacion) === 100
+                                ? "bg-green-600"
+                                : "bg-blue-600"
+                          }`}
+                          style={{
+                            width: `${Math.min(100, Math.max(0, calcularProgreso(orden.fechaInicio, orden.fechaEstimadaTerminacion)))}%`,
+                          }}
                         ></div>
                       </div>
                       <div className="flex justify-between text-xs text-muted-foreground mt-1">
                         <span>
-                          {orden.horasReales}h / {orden.horasEstimadas}h
+                          Inicio: {new Date(orden.fechaInicio).toLocaleDateString("es-GT")} | Fin:{" "}
+                          {new Date(orden.fechaEstimadaTerminacion).toLocaleDateString("es-GT")}
                         </span>
-                        <span>Costo: ${orden.costo.toLocaleString()}</span>
+                        <span>Costo: Q{orden.costo.toLocaleString()}</span>
                       </div>
                     </div>
                   )}

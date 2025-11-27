@@ -52,6 +52,9 @@ export const API_ENDPOINTS = {
     get CLIENTES_STATS() {
       return nextApiEndpoint('/api/ferreteria/clientes/stats')
     },
+    get PROVEEDORES() {
+      return nextApiEndpoint('/api/ferreteria/proveedores')
+    },
   },
   BLOQUERA: {
     get PRODUCTOS() {
@@ -81,6 +84,9 @@ export const API_ENDPOINTS = {
     get EMPLEADOS_STATS() {
       return nextApiEndpoint('/api/planillas/empleados/stats')
     },
+  },
+  TALLER: {
+    // Sección reservada para futuras funcionalidades del taller
   },
 }
 
