@@ -1,215 +1,254 @@
 "use client"
 
-import { CardDescription } from "@/components/ui/card"
-
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  BarChart as RechartsBarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart as RechartsPieChart,
-  Pie,
-  Cell,
-  LineChart as RechartsLineChart,
-  Line,
-} from "recharts"
-import { Download, Users } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Loader2, Download, Package, TrendingUp, TrendingDown, AlertTriangle, RefreshCw, BarChart3 } from "lucide-react"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet } from "@/lib/api-client"
+import { useToast } from "@/hooks/use-toast"
 
-interface Cliente {
-  id: string
-  nombre: string
-  nit: string
-}
-
-interface KPIs {
-  ventasTotales: number
-  totalFacturas: number
-  productosVendidos: number
-  clientesActivos: number
-  porcentajeVentas: number
-  diferenciaFacturas: number
-}
-
-interface VentaPorMes {
-  mes: string
-  ventas: number
-  facturas: number
-}
-
-interface VentaPorFormaPago {
-  name: string
-  value: number
-  color: string
+interface InventarioUnificado {
+  resumen_general: {
+    total_productos: number
+    productos_activos: number
+    productos_inactivos: number
+    productos_stock_bajo: number
+    valor_inventario_total: number
+  }
+  por_empresa: Array<{
+    empresa: string
+    total_productos: number
+    productos_activos: number
+    productos_inactivos: number
+    stock_total: number
+    stock_minimo_total: number
+    productos_stock_bajo: number
+    valor_inventario_estimado: number
+    unidades: string
+  }>
+  total_general: {
+    total_productos: number
+    productos_activos: number
+    productos_inactivos: number
+    productos_stock_bajo: number
+    valor_inventario_total: number
+  }
 }
 
 interface TopProducto {
-  producto: string
-  ventas: number
-  ingresos: number
+  producto_id: number
+  producto_codigo: string
+  producto_nombre: string
+  empresa: string
+  cantidad_vendida: number
+  unidades: string
+  valor_total: number
 }
 
-interface TopCliente {
-  id: string
-  nombre: string
-  numero_facturas: number
-  total_compras: number
-}
-
-// Función helper para obtener el token
-const getAuthToken = (): string | null => {
-  if (typeof window !== 'undefined') {
-    return localStorage.getItem('token')
-  }
-  return null
+interface EstadisticaPredictiva {
+  empresa: string
+  producto_id: number
+  producto_codigo: string
+  producto_nombre: string
+  stock_actual: number
+  stock_minimo: number
+  promedio_ventas_diarias: number | null
+  promedio_ventas_semanales: number | null
+  promedio_ventas_mensuales: number | null
+  dias_restantes_estimados: number | null
+  necesita_reposicion: boolean
+  tendencia: "creciente" | "decreciente" | "estable" | null
+  unidades: string
 }
 
 export default function ReportesPage() {
-  const [tipoReporte, setTipoReporte] = useState("ventas")
-  const [fechaInicio, setFechaInicio] = useState("")
-  const [fechaFin, setFechaFin] = useState("")
-  const [filtroCliente, setFiltroCliente] = useState("all")
-  
-  // Estados para datos
-  const [kpis, setKpis] = useState<KPIs | null>(null)
-  const [ventasPorMes, setVentasPorMes] = useState<VentaPorMes[]>([])
-  const [ventasPorFormaPago, setVentasPorFormaPago] = useState<VentaPorFormaPago[]>([])
-  const [topProductos, setTopProductos] = useState<TopProducto[]>([])
-  const [topClientes, setTopClientes] = useState<TopCliente[]>([])
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const { toast } = useToast()
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState("inventario")
 
-  // Cargar datos iniciales
-  useEffect(() => {
-    cargarDatos()
-  }, [fechaInicio, fechaFin])
+  // Estados para Inventario Unificado
+  const [inventarioUnificado, setInventarioUnificado] = useState<InventarioUnificado | null>(null)
 
-  // Cargar clientes para el filtro
+  // Estados para Top Productos
+  const [topProductos, setTopProductos] = useState<TopProducto[]>([])
+  const [filtroEmpresaTop, setFiltroEmpresaTop] = useState("todas")
+  const [limitTop, setLimitTop] = useState("10")
+  const [fechaDesdeTop, setFechaDesdeTop] = useState("")
+  const [fechaHastaTop, setFechaHastaTop] = useState("")
+  const [loadingTop, setLoadingTop] = useState(false)
+
+  // Estados para Estadísticas Predictivas
+  const [estadisticas, setEstadisticas] = useState<EstadisticaPredictiva[]>([])
+  const [filtroEmpresaStats, setFiltroEmpresaStats] = useState("todas")
+  const [diasAnalisis, setDiasAnalisis] = useState("30")
+  const [loadingStats, setLoadingStats] = useState(false)
+
+  // Cargar inventario unificado al montar
   useEffect(() => {
-    cargarClientes()
+    loadInventarioUnificado()
   }, [])
 
-  const cargarClientes = async () => {
+  const loadInventarioUnificado = async () => {
     try {
-      const token = getAuthToken()
-      if (!token) return
-
-      const response = await fetch("/api/ferreteria/clientes", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      setLoading(true)
+      setError(null)
+      const endpoint = API_ENDPOINTS.REPORTES.INVENTARIO_UNIFICADO
+      console.log('🔍 [Reportes] Cargando inventario unificado desde:', endpoint)
+      const data = await apiGet<InventarioUnificado>(endpoint)
+      console.log('✅ [Reportes] Datos recibidos:', data)
+      setInventarioUnificado(data)
+      toast({
+        title: "Éxito",
+        description: "Inventario unificado cargado correctamente",
       })
-
-      if (response.ok) {
-        const data = await response.json()
-        setClientes(data)
-      }
-    } catch (err) {
-      console.error("Error al cargar clientes:", err)
-    }
-  }
-
-  const cargarDatos = async () => {
-    setIsLoading(true)
-    setError(null)
-    const token = getAuthToken()
-
-    if (!token) {
-      setError("No hay token de autenticación")
-      setIsLoading(false)
-      return
-    }
-
-    try {
-      // Construir query params
-      const params = new URLSearchParams()
-      if (fechaInicio) params.append('fechaInicio', fechaInicio)
-      if (fechaFin) params.append('fechaFin', fechaFin)
-
-      const headers = {
-        Authorization: `Bearer ${token}`,
-      }
-
-      // Cargar todos los datos en paralelo
-      const [kpisRes, ventasMesRes, formaPagoRes, productosRes, clientesRes] = await Promise.all([
-        fetch(`/api/ferreteria/reportes/kpis?${params.toString()}`, { headers }),
-        fetch("/api/ferreteria/reportes/ventas-mes", { headers }),
-        fetch("/api/ferreteria/reportes/ventas-forma-pago", { headers }),
-        fetch("/api/ferreteria/reportes/top-productos", { headers }),
-        fetch("/api/ferreteria/reportes/top-clientes", { headers }),
-      ])
-
-      if (!kpisRes.ok || !ventasMesRes.ok || !formaPagoRes.ok || !productosRes.ok || !clientesRes.ok) {
-        throw new Error("Error al cargar los datos")
-      }
-
-      const [kpisData, ventasMesData, formaPagoData, productosData, clientesData] = await Promise.all([
-        kpisRes.json(),
-        ventasMesRes.json(),
-        formaPagoRes.json(),
-        productosRes.json(),
-        clientesRes.json(),
-      ])
-
-      setKpis(kpisData)
-      setVentasPorMes(ventasMesData)
-      setVentasPorFormaPago(formaPagoData)
-      setTopProductos(productosData)
-      setTopClientes(clientesData)
-    } catch (err) {
-      console.error("Error al cargar datos:", err)
-      setError("Error al cargar los datos. Por favor, intenta nuevamente.")
+    } catch (err: any) {
+      console.error("Error al cargar inventario unificado:", err)
+      const errorMessage = err.message || err.response?.data?.error || "Error al cargar el inventario unificado"
+      setError(errorMessage)
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
     } finally {
-      setIsLoading(false)
+      setLoading(false)
     }
   }
 
-  const generarReporte = () => {
-    console.log("Generando reporte:", { tipoReporte, fechaInicio, fechaFin, filtroCliente })
-    cargarDatos()
+  const loadTopProductos = async () => {
+    try {
+      setLoadingTop(true)
+      const params = new URLSearchParams()
+      params.append("empresa", filtroEmpresaTop)
+      params.append("limit", limitTop)
+      if (fechaDesdeTop) params.append("fecha_desde", fechaDesdeTop)
+      if (fechaHastaTop) params.append("fecha_hasta", fechaHastaTop)
+
+      const url = `${API_ENDPOINTS.REPORTES.TOP_PRODUCTOS_VENDIDOS}?${params.toString()}`
+      const data = await apiGet<TopProducto[]>(url)
+      setTopProductos(Array.isArray(data) ? data : [])
+      if (data.length > 0) {
+        toast({
+          title: "Éxito",
+          description: `${data.length} productos cargados correctamente`,
+        })
+      }
+    } catch (err: any) {
+      console.error("Error al cargar top productos:", err)
+      const errorMessage = err.message || err.response?.data?.error || "No se pudieron cargar los productos más vendidos"
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      setTopProductos([])
+    } finally {
+      setLoadingTop(false)
+    }
   }
 
-  const exportarPDF = () => {
-    alert("Exportando reporte a PDF...")
+  const loadEstadisticasPredictivas = async () => {
+    try {
+      setLoadingStats(true)
+      const params = new URLSearchParams()
+      params.append("empresa", filtroEmpresaStats)
+      params.append("dias_analisis", diasAnalisis)
+
+      const url = `${API_ENDPOINTS.REPORTES.ESTADISTICAS_PREDICTIVAS}?${params.toString()}`
+      const data = await apiGet<EstadisticaPredictiva[]>(url)
+      setEstadisticas(Array.isArray(data) ? data : [])
+      if (data.length > 0) {
+        toast({
+          title: "Éxito",
+          description: `${data.length} productos analizados correctamente`,
+        })
+      }
+    } catch (err: any) {
+      console.error("Error al cargar estadísticas predictivas:", err)
+      const errorMessage = err.message || err.response?.data?.error || "No se pudieron cargar las estadísticas predictivas"
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      setEstadisticas([])
+    } finally {
+      setLoadingStats(false)
+    }
   }
 
-  const exportarExcel = () => {
-    alert("Exportando reporte a Excel...")
-  }
-
-  if (isLoading && !kpis) {
+  const getEmpresaBadge = (empresa: string) => {
+    const colors: Record<string, string> = {
+      ferreteria: "bg-blue-500",
+      bloquera: "bg-green-500",
+      piedrinera: "bg-orange-500",
+    }
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent"></div>
-          <p className="mt-4 text-sm text-muted-foreground">Cargando reportes...</p>
+      <Badge className={colors[empresa] || "bg-gray-500"}>
+        {empresa.charAt(0).toUpperCase() + empresa.slice(1)}
+      </Badge>
+    )
+  }
+
+  const getTendenciaBadge = (tendencia: string | null) => {
+    if (!tendencia) return <Badge variant="outline">Sin datos</Badge>
+    switch (tendencia) {
+      case "creciente":
+        return (
+          <Badge className="bg-green-500">
+            <TrendingUp className="h-3 w-3 mr-1" />
+            Creciente
+          </Badge>
+        )
+      case "decreciente":
+        return (
+          <Badge className="bg-red-500">
+            <TrendingDown className="h-3 w-3 mr-1" />
+            Decreciente
+          </Badge>
+        )
+      case "estable":
+        return <Badge variant="secondary">Estable</Badge>
+      default:
+        return <Badge variant="outline">{tendencia}</Badge>
+    }
+  }
+
+  const formatNumber = (num: number, decimals: number = 2) => {
+    return num.toLocaleString("es-GT", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })
+  }
+
+  if (loading && !inventarioUnificado) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-muted-foreground">Cargando reportes...</p>
         </div>
       </div>
     )
   }
 
-  if (error) {
+  if (error && !inventarioUnificado) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-[400px]">
         <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle className="text-red-600">Error</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">{error}</p>
-            <Button onClick={cargarDatos} className="mt-4">
-              Reintentar
-            </Button>
+          <CardContent className="pt-6">
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-center text-destructive">{error}</p>
+              <Button onClick={loadInventarioUnificado}>Reintentar</Button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -217,283 +256,375 @@ export default function ReportesPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Reportes de Ferretería</h1>
-          <p className="text-gray-600">Análisis y reportes del módulo de ferretería</p>
+          <h1 className="text-3xl font-bold">Reportes Unificados</h1>
+          <p className="text-muted-foreground">Análisis consolidado de Ferretería, Bloquera y Piedrinera</p>
         </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" onClick={exportarExcel}>
-            <Download className="mr-2 h-4 w-4" />
-            Excel
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={loadInventarioUnificado}>
+            <RefreshCw className="mr-2 h-4 w-4" /> Actualizar
           </Button>
-          <Button variant="outline" onClick={exportarPDF}>
-            <Download className="mr-2 h-4 w-4" />
-            PDF
+          <Button variant="outline">
+            <Download className="mr-2 h-4 w-4" /> Exportar
           </Button>
-          <Button onClick={generarReporte}>Generar Reporte</Button>
         </div>
       </div>
 
-      {/* Filtros */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">Filtros de Reporte</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <Label htmlFor="tipo_reporte">Tipo de Reporte</Label>
-              <Select value={tipoReporte} onValueChange={setTipoReporte}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ventas">Ventas</SelectItem>
-                  <SelectItem value="productos">Productos</SelectItem>
-                  <SelectItem value="clientes">Clientes</SelectItem>
-                  <SelectItem value="inventario">Inventario</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="fecha_inicio">Fecha Inicio</Label>
-              <Input
-                id="fecha_inicio"
-                type="date"
-                value={fechaInicio}
-                onChange={(e) => setFechaInicio(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="fecha_fin">Fecha Fin</Label>
-              <Input id="fecha_fin" type="date" value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} />
-            </div>
-            <div>
-              <Label htmlFor="cliente">Cliente</Label>
-              <Select value={filtroCliente} onValueChange={setFiltroCliente}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos los clientes" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los clientes</SelectItem>
-                  {clientes.map((cliente) => (
-                    <SelectItem key={cliente.id} value={cliente.id.toString()}>
-                      {cliente.nombre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="inventario">Inventario Unificado</TabsTrigger>
+          <TabsTrigger value="top-productos">Top Productos</TabsTrigger>
+          <TabsTrigger value="predictivas">Estadísticas Predictivas</TabsTrigger>
+        </TabsList>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Tab: Inventario Unificado */}
+        <TabsContent value="inventario" className="space-y-4">
+          {inventarioUnificado && (
+            <>
+              {/* Resumen General */}
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Ventas Totales</CardTitle>
+                    <CardTitle className="text-sm font-medium">Total Productos</CardTitle>
+                    <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">Q {kpis?.ventasTotales.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</div>
-            <p className="text-xs text-muted-foreground">
-              {kpis && kpis.porcentajeVentas > 0 ? '+' : ''}{kpis?.porcentajeVentas.toFixed(1) || '0'}% vs mes anterior
-            </p>
+                    <div className="text-2xl font-bold">{inventarioUnificado.resumen_general.total_productos}</div>
+                    <p className="text-xs text-muted-foreground">En todas las empresas</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Facturas Emitidas</CardTitle>
+                    <CardTitle className="text-sm font-medium">Productos Activos</CardTitle>
+                    <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{kpis?.totalFacturas || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              {kpis && kpis.diferenciaFacturas > 0 ? '+' : ''}{kpis?.diferenciaFacturas || 0} vs mes anterior
-            </p>
+                    <div className="text-2xl font-bold">{inventarioUnificado.resumen_general.productos_activos}</div>
+                    <p className="text-xs text-muted-foreground">Disponibles para venta</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Productos Vendidos</CardTitle>
+                    <CardTitle className="text-sm font-medium">Stock Bajo</CardTitle>
+                    <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{kpis?.productosVendidos.toLocaleString() || '0'}</div>
-            <p className="text-xs text-muted-foreground">Total de unidades vendidas</p>
+                    <div className="text-2xl font-bold text-orange-600">
+                      {inventarioUnificado.resumen_general.productos_stock_bajo}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Necesitan reposición</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Clientes Activos</CardTitle>
+                    <CardTitle className="text-sm font-medium">Valor Total</CardTitle>
+                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{kpis?.clientesActivos || 0}</div>
-            <p className="text-xs text-muted-foreground">Clientes con compras en el período</p>
+                    <div className="text-2xl font-bold">
+                      Q {formatNumber(inventarioUnificado.resumen_general.valor_inventario_total)}
+      </div>
+                    <p className="text-xs text-muted-foreground">Valor estimado del inventario</p>
+          </CardContent>
+        </Card>
+        <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Productos Inactivos</CardTitle>
+                    <Package className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+                    <div className="text-2xl font-bold">{inventarioUnificado.resumen_general.productos_inactivos}</div>
+                    <p className="text-xs text-muted-foreground">No disponibles</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Gráficos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Desglose por Empresa */}
         <Card>
           <CardHeader>
-            <CardTitle>Ventas por Mes</CardTitle>
-            <CardDescription>Evolución de ventas en los últimos 6 meses</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <RechartsBarChart data={ventasPorMes}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="mes" />
-                <YAxis />
-                <Tooltip formatter={(value: number) => [`Q ${value.toLocaleString()}`, "Ventas"]} />
-                <Bar dataKey="ventas" fill="#3B82F6" />
-              </RechartsBarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Ventas por Forma de Pago</CardTitle>
-            <CardDescription>Distribución de métodos de pago</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <RechartsPieChart>
-                <Pie
-                  data={ventasPorFormaPago as any}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={(entry: any) => `${entry.name} ${entry.percent ? (entry.percent * 100).toFixed(0) : 0}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {ventasPorFormaPago.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </RechartsPieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Tablas de Datos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Top Productos</CardTitle>
-            <CardDescription>Productos más vendidos del período</CardDescription>
+                  <CardTitle>Desglose por Empresa</CardTitle>
+                  <CardDescription>Detalle del inventario por cada empresa</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Producto</TableHead>
-                  <TableHead className="text-center">Cantidad</TableHead>
-                  <TableHead className="text-right">Ingresos</TableHead>
+                        <TableHead>Empresa</TableHead>
+                        <TableHead>Total Productos</TableHead>
+                        <TableHead>Activos</TableHead>
+                        <TableHead>Stock Total</TableHead>
+                        <TableHead>Stock Mínimo</TableHead>
+                        <TableHead>Stock Bajo</TableHead>
+                        <TableHead className="text-right">Valor Inventario</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {topProductos.length > 0 ? (
-                  topProductos.map((producto, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="font-medium">{producto.producto}</TableCell>
-                      <TableCell className="text-center">{producto.ventas}</TableCell>
-                      <TableCell className="text-right">Q {producto.ingresos.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center text-muted-foreground">
-                      No hay datos disponibles
+                      {inventarioUnificado.por_empresa.map((empresa) => (
+                        <TableRow key={empresa.empresa}>
+                          <TableCell className="font-medium">{getEmpresaBadge(empresa.empresa)}</TableCell>
+                          <TableCell>{empresa.total_productos}</TableCell>
+                          <TableCell>{empresa.productos_activos}</TableCell>
+                          <TableCell>
+                            {formatNumber(empresa.stock_total, empresa.unidades === "m³" ? 2 : 0)} {empresa.unidades}
+                          </TableCell>
+                          <TableCell>
+                            {formatNumber(empresa.stock_minimo_total, empresa.unidades === "m³" ? 2 : 0)} {empresa.unidades}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={empresa.productos_stock_bajo > 0 ? "destructive" : "secondary"}>
+                              {empresa.productos_stock_bajo}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            Q {formatNumber(empresa.valor_inventario_estimado)}
                     </TableCell>
                   </TableRow>
-                )}
+                      ))}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
+            </>
+          )}
+        </TabsContent>
 
+        {/* Tab: Top Productos Vendidos */}
+        <TabsContent value="top-productos" className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>Top Clientes</CardTitle>
-            <CardDescription>Clientes con mayor volumen de compras</CardDescription>
+              <CardTitle>Top Productos Más Vendidos</CardTitle>
+              <CardDescription>Ranking de productos con mayor volumen de ventas</CardDescription>
           </CardHeader>
           <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div>
+                  <Label>Empresa</Label>
+                  <Select value={filtroEmpresaTop} onValueChange={setFiltroEmpresaTop}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="ferreteria">Ferretería</SelectItem>
+                      <SelectItem value="bloquera">Bloquera</SelectItem>
+                      <SelectItem value="piedrinera">Piedrinera</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Cantidad</Label>
+                  <Select value={limitTop} onValueChange={setLimitTop}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5">Top 5</SelectItem>
+                      <SelectItem value="10">Top 10</SelectItem>
+                      <SelectItem value="20">Top 20</SelectItem>
+                      <SelectItem value="50">Top 50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Fecha Desde</Label>
+                  <Input
+                    type="date"
+                    value={fechaDesdeTop}
+                    onChange={(e) => setFechaDesdeTop(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label>Fecha Hasta</Label>
+                  <Input
+                    type="date"
+                    value={fechaHastaTop}
+                    onChange={(e) => setFechaHastaTop(e.target.value)}
+                  />
+                </div>
+              </div>
+              <Button onClick={loadTopProductos} disabled={loadingTop} className="mb-4">
+                {loadingTop ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Cargando...
+                  </>
+                ) : (
+                  <>
+                    <BarChart3 className="mr-2 h-4 w-4" />
+                    Generar Reporte
+                  </>
+                )}
+              </Button>
+
+              {topProductos.length > 0 && (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead className="text-center">Facturas</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
+                      <TableHead>#</TableHead>
+                      <TableHead>Producto</TableHead>
+                      <TableHead>Empresa</TableHead>
+                      <TableHead>Cantidad Vendida</TableHead>
+                      <TableHead className="text-right">Valor Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {topClientes.length > 0 ? (
-                  topClientes.slice(0, 10).map((cliente) => (
-                    <TableRow key={cliente.id}>
-                      <TableCell className="font-medium">{cliente.nombre}</TableCell>
-                      <TableCell className="text-center">{cliente.numero_facturas}</TableCell>
-                      <TableCell className="text-right">Q {cliente.total_compras.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center text-muted-foreground">
-                      No hay datos disponibles
+                    {topProductos.map((producto, index) => (
+                      <TableRow key={producto.producto_id}>
+                        <TableCell className="font-medium">{index + 1}</TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{producto.producto_nombre}</div>
+                            <div className="text-sm text-muted-foreground">{producto.producto_codigo}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>{getEmpresaBadge(producto.empresa)}</TableCell>
+                        <TableCell>
+                          {formatNumber(producto.cantidad_vendida, producto.unidades === "m³" ? 2 : 0)} {producto.unidades}
                     </TableCell>
+                        <TableCell className="text-right">Q {formatNumber(producto.valor_total)}</TableCell>
                   </TableRow>
-                )}
+                    ))}
               </TableBody>
             </Table>
+              )}
+              {topProductos.length === 0 && !loadingTop && (
+                <p className="text-center text-muted-foreground py-8">
+                  No hay datos disponibles. Haz clic en "Generar Reporte" para cargar los datos.
+                </p>
+              )}
           </CardContent>
         </Card>
-      </div>
+        </TabsContent>
 
-      {/* Tendencias */}
+        {/* Tab: Estadísticas Predictivas */}
+        <TabsContent value="predictivas" className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Tendencia de Ventas</CardTitle>
-          <CardDescription>Comparación de ventas y número de facturas</CardDescription>
+              <CardTitle>Estadísticas Predictivas</CardTitle>
+              <CardDescription>
+                Análisis predictivo basado en historial de ventas y tendencias de stock
+              </CardDescription>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={400}>
-            <RechartsLineChart data={ventasPorMes}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="mes" />
-              <YAxis yAxisId="left" />
-              <YAxis yAxisId="right" orientation="right" />
-              <Tooltip />
-              <Line
-                yAxisId="left"
-                type="monotone"
-                dataKey="ventas"
-                stroke="#3B82F6"
-                strokeWidth={2}
-                name="Ventas (Q)"
-              />
-              <Line
-                yAxisId="right"
-                type="monotone"
-                dataKey="facturas"
-                stroke="#10B981"
-                strokeWidth={2}
-                name="Facturas (#)"
-              />
-            </RechartsLineChart>
-          </ResponsiveContainer>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                  <Label>Empresa</Label>
+                  <Select value={filtroEmpresaStats} onValueChange={setFiltroEmpresaStats}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="ferreteria">Ferretería</SelectItem>
+                      <SelectItem value="bloquera">Bloquera</SelectItem>
+                      <SelectItem value="piedrinera">Piedrinera</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Días de Análisis</Label>
+                  <Select value={diasAnalisis} onValueChange={setDiasAnalisis}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="15">Últimos 15 días</SelectItem>
+                      <SelectItem value="30">Últimos 30 días</SelectItem>
+                      <SelectItem value="60">Últimos 60 días</SelectItem>
+                      <SelectItem value="90">Últimos 90 días</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end">
+                  <Button onClick={loadEstadisticasPredictivas} disabled={loadingStats} className="w-full">
+                    {loadingStats ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Cargando...
+                      </>
+                    ) : (
+                      <>
+                        <TrendingUp className="mr-2 h-4 w-4" />
+                        Generar Análisis
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {estadisticas.length > 0 && (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Producto</TableHead>
+                        <TableHead>Empresa</TableHead>
+                        <TableHead>Stock Actual</TableHead>
+                        <TableHead>Stock Mínimo</TableHead>
+                        <TableHead>Promedio Diario</TableHead>
+                        <TableHead>Días Restantes</TableHead>
+                        <TableHead>Tendencia</TableHead>
+                        <TableHead>Estado</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {estadisticas.map((stat) => (
+                        <TableRow key={`${stat.empresa}-${stat.producto_id}`}>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{stat.producto_nombre}</div>
+                              <div className="text-sm text-muted-foreground">{stat.producto_codigo}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>{getEmpresaBadge(stat.empresa)}</TableCell>
+                          <TableCell>
+                            {formatNumber(stat.stock_actual, stat.unidades === "m³" ? 2 : 0)} {stat.unidades}
+                          </TableCell>
+                          <TableCell>
+                            {formatNumber(stat.stock_minimo, stat.unidades === "m³" ? 2 : 0)} {stat.unidades}
+                          </TableCell>
+                          <TableCell>
+                            {stat.promedio_ventas_diarias !== null
+                              ? `${formatNumber(stat.promedio_ventas_diarias, stat.unidades === "m³" ? 2 : 0)} ${stat.unidades}/día`
+                              : "Sin datos"}
+                          </TableCell>
+                          <TableCell>
+                            {stat.dias_restantes_estimados !== null ? (
+                              <Badge variant={stat.dias_restantes_estimados < 7 ? "destructive" : "secondary"}>
+                                {stat.dias_restantes_estimados} días
+                              </Badge>
+                            ) : (
+                              "N/A"
+                            )}
+                          </TableCell>
+                          <TableCell>{getTendenciaBadge(stat.tendencia)}</TableCell>
+                          <TableCell>
+                            {stat.necesita_reposicion ? (
+                              <Badge variant="destructive">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                Reposición
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary">Normal</Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+              {estadisticas.length === 0 && !loadingStats && (
+                <p className="text-center text-muted-foreground py-8">
+                  No hay datos disponibles. Haz clic en "Generar Análisis" para cargar las estadísticas.
+                </p>
+              )}
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

@@ -26,6 +26,8 @@ import Link from "next/link"
 import { API_ENDPOINTS } from "@/lib/api-config"
 import { apiGet } from "@/lib/api-client"
 import type { MovimientoInventario } from "@/types/database"
+import { CrearFacturaDialog } from "@/components/facturacion/crear-factura-dialog"
+import { ShoppingCart } from "lucide-react"
 
 const ITEMS_PER_PAGE = 10
 const MOVIMIENTOS_PER_PAGE = 5
@@ -69,6 +71,7 @@ export default function InventarioFerreteriaPage() {
     fechaDesde: "",
     fechaHasta: "",
   })
+  const [facturaDialogOpen, setFacturaDialogOpen] = useState(false)
 
   // Cargar datos desde la API
   useEffect(() => {
@@ -373,13 +376,25 @@ export default function InventarioFerreteriaPage() {
           }}>
             <Download className="mr-2 h-4 w-4" /> Exportar
           </Button>
+          <Button onClick={() => setFacturaDialogOpen(true)}>
+            <ShoppingCart className="mr-2 h-4 w-4" /> Crear Factura
+          </Button>
           <Link href="/ferreteria/inventario/ajustar">
-            <Button>
+            <Button variant="outline">
               <PlusCircle className="mr-2 h-4 w-4" /> Ajustar Inventario
             </Button>
           </Link>
         </div>
       </div>
+
+      <CrearFacturaDialog
+        open={facturaDialogOpen}
+        onOpenChange={setFacturaDialogOpen}
+        onFacturaCreada={(facturaId) => {
+          // Recargar datos después de crear factura
+          window.location.reload()
+        }}
+      />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>

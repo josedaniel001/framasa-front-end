@@ -1,0 +1,634 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
+import { useToast } from "@/hooks/use-toast"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet, apiPost } from "@/lib/api-client"
+import { Loader2, Plus, X, ShoppingCart, Search } from "lucide-react"
+import { useAuth } from "@/contexts/auth-context"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+
+interface ProductoDisponible {
+  id: number
+  codigo: string
+  nombre: string
+  precioVenta: number
+  stock: number
+  empresa: "FERRETERIA" | "BLOQUERA" | "PIEDRINERA"
+  unidadMedida?: string
+}
+
+interface DetalleFactura {
+  producto_id: number
+  producto_empresa: "FERRETERIA" | "BLOQUERA" | "PIEDRINERA"
+  producto_codigo: string
+  producto_nombre: string
+  cantidad: number
+  precio_unitario: number
+  descuento: number
+  subtotal: number
+}
+
+interface Cliente {
+  id: number
+  nombre: string
+  nit: string | null
+  permite_fiado?: boolean
+  limite_credito?: number
+  saldo_actual?: number
+  credito_disponible?: number
+}
+
+interface CrearFacturaDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onFacturaCreada?: (facturaId: number) => void
+}
+
+export function CrearFacturaDialog({
+  open,
+  onOpenChange,
+  onFacturaCreada,
+}: CrearFacturaDialogProps) {
+  const { toast } = useToast()
+  const { usuario } = useAuth()
+  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [loadingProductos, setLoadingProductos] = useState(false)
+
+  // Estados del formulario
+  const [clienteSeleccionado, setClienteSeleccionado] = useState<string>("")
+  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [descuento, setDescuento] = useState<number>(0)
+  const [observaciones, setObservaciones] = useState<string>("")
+  const [fechaVencimiento, setFechaVencimiento] = useState<string>("")
+
+  // Estados para productos
+  const [productosDisponibles, setProductosDisponibles] = useState<ProductoDisponible[]>([])
+  const [detalles, setDetalles] = useState<DetalleFactura[]>([])
+  const [empresaFiltro, setEmpresaFiltro] = useState<"TODAS" | "FERRETERIA" | "BLOQUERA" | "PIEDRINERA">("TODAS")
+  const [searchProducto, setSearchProducto] = useState("")
+  const [productoSeleccionado, setProductoSeleccionado] = useState<string>("")
+  const [cantidadProducto, setCantidadProducto] = useState<number>(1)
+  const [precioProducto, setPrecioProducto] = useState<number>(0)
+
+  // Cargar clientes al abrir el diálogo
+  useEffect(() => {
+    if (open) {
+      loadClientes()
+      loadProductos()
+    } else {
+      // Resetear formulario al cerrar
+      setClienteSeleccionado("")
+      setDetalles([])
+      setDescuento(0)
+      setObservaciones("")
+      setFechaVencimiento("")
+      setProductoSeleccionado("")
+      setCantidadProducto(1)
+      setPrecioProducto(0)
+      setSearchProducto("")
+      setEmpresaFiltro("TODAS")
+    }
+  }, [open])
+
+  const loadClientes = async () => {
+    try {
+      setLoading(true)
+      const data = await apiGet<any>(API_ENDPOINTS.FERRETERIA.CLIENTES)
+      const clientesData = Array.isArray(data) ? data : data?.results || data?.data || []
+      setClientes(clientesData)
+    } catch (error) {
+      console.error("Error al cargar clientes:", error)
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los clientes",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadProductos = async () => {
+    try {
+      setLoadingProductos(true)
+      const [ferreteria, bloquera, piedrinera] = await Promise.allSettled([
+        apiGet<any>(API_ENDPOINTS.FERRETERIA.PRODUCTOS),
+        apiGet<any>(API_ENDPOINTS.BLOQUERA.PRODUCTOS),
+        apiGet<any>(API_ENDPOINTS.PIEDRINERA.PRODUCTOS),
+      ])
+
+      const productos: ProductoDisponible[] = []
+
+      // Procesar productos de ferretería
+      if (ferreteria.status === "fulfilled") {
+        const data = ferreteria.value
+        const productosData = Array.isArray(data) ? data : data?.results || data?.data || []
+        productosData.forEach((p: any) => {
+          if (p.activo && (p.stockActual || p.stock || 0) > 0) {
+            productos.push({
+              id: p.id,
+              codigo: p.codigo || "",
+              nombre: p.nombre || "",
+              precioVenta: p.precioVenta || p.precio_venta || 0,
+              stock: p.stockActual || p.stock || 0,
+              empresa: "FERRETERIA",
+              unidadMedida: p.unidadMedida || p.unidad_medida || "unidades",
+            })
+          }
+        })
+      }
+
+      // Procesar productos de bloquera
+      if (bloquera.status === "fulfilled") {
+        const data = bloquera.value
+        const productosData = Array.isArray(data) ? data : data?.results || data?.data || []
+        productosData.forEach((p: any) => {
+          if (p.activo && (p.stockActual || p.stock || 0) > 0) {
+            productos.push({
+              id: p.id,
+              codigo: p.codigo || "",
+              nombre: p.nombre || "",
+              precioVenta: p.precioVentaUnitario || p.precio_venta_unitario || 0,
+              stock: p.stockActual || p.stock || 0,
+              empresa: "BLOQUERA",
+              unidadMedida: "unidades",
+            })
+          }
+        })
+      }
+
+      // Procesar productos de piedrinera
+      if (piedrinera.status === "fulfilled") {
+        const data = piedrinera.value
+        const productosData = Array.isArray(data) ? data : data?.results || data?.data || []
+        productosData.forEach((p: any) => {
+          if (p.activo && (p.stock || p.stockActual || 0) > 0) {
+            productos.push({
+              id: p.id,
+              codigo: p.codigo || "",
+              nombre: p.nombre || "",
+              precioVenta: p.precioVenta || p.precio_venta || 0,
+              stock: p.stock || p.stockActual || 0,
+              empresa: "PIEDRINERA",
+              unidadMedida: "m³",
+            })
+          }
+        })
+      }
+
+      setProductosDisponibles(productos)
+    } catch (error) {
+      console.error("Error al cargar productos:", error)
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los productos",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingProductos(false)
+    }
+  }
+
+  const productosFiltrados = productosDisponibles.filter((p) => {
+    const matchesEmpresa = empresaFiltro === "TODAS" || p.empresa === empresaFiltro
+    const matchesSearch =
+      !searchProducto ||
+      p.nombre.toLowerCase().includes(searchProducto.toLowerCase()) ||
+      p.codigo.toLowerCase().includes(searchProducto.toLowerCase())
+    return matchesEmpresa && matchesSearch && p.stock > 0
+  })
+
+  const handleAgregarProducto = () => {
+    if (!productoSeleccionado || cantidadProducto <= 0) {
+      toast({
+        title: "Error",
+        description: "Selecciona un producto y una cantidad válida",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const producto = productosDisponibles.find((p) => String(p.id) === productoSeleccionado)
+    if (!producto) return
+
+    if (cantidadProducto > producto.stock) {
+      toast({
+        title: "Stock insuficiente",
+        description: `Stock disponible: ${producto.stock} ${producto.unidadMedida || ""}`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    const precio = precioProducto > 0 ? precioProducto : producto.precioVenta
+    const subtotal = cantidadProducto * precio
+
+    // Verificar si el producto ya está en los detalles
+    const existeIndex = detalles.findIndex(
+      (d) => d.producto_id === producto.id && d.producto_empresa === producto.empresa
+    )
+
+    if (existeIndex >= 0) {
+      // Actualizar cantidad existente
+      const nuevosDetalles = [...detalles]
+      nuevosDetalles[existeIndex].cantidad += cantidadProducto
+      nuevosDetalles[existeIndex].subtotal = nuevosDetalles[existeIndex].cantidad * nuevosDetalles[existeIndex].precio_unitario
+      setDetalles(nuevosDetalles)
+    } else {
+      // Agregar nuevo detalle
+      setDetalles([
+        ...detalles,
+        {
+          producto_id: producto.id,
+          producto_empresa: producto.empresa,
+          producto_codigo: producto.codigo,
+          producto_nombre: producto.nombre,
+          cantidad: cantidadProducto,
+          precio_unitario: precio,
+          descuento: 0,
+          subtotal: subtotal,
+        },
+      ])
+    }
+
+    // Resetear selección
+    setProductoSeleccionado("")
+    setCantidadProducto(1)
+    setPrecioProducto(0)
+  }
+
+  const handleEliminarDetalle = (index: number) => {
+    setDetalles(detalles.filter((_, i) => i !== index))
+  }
+
+  const handleProductoChange = (productoId: string) => {
+    setProductoSeleccionado(productoId)
+    const producto = productosDisponibles.find((p) => String(p.id) === productoId)
+    if (producto) {
+      setPrecioProducto(producto.precioVenta)
+    }
+  }
+
+  const calcularSubtotal = () => {
+    return detalles.reduce((sum, d) => sum + d.subtotal, 0)
+  }
+
+  const calcularTotal = () => {
+    return calcularSubtotal() - descuento
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!clienteSeleccionado) {
+      toast({
+        title: "Error",
+        description: "Selecciona un cliente",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (detalles.length === 0) {
+      toast({
+        title: "Error",
+        description: "Agrega al menos un producto",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      setSubmitting(true)
+
+      const facturaData = {
+        cliente: Number(clienteSeleccionado),
+        descuento: descuento || 0,
+        observaciones: observaciones.trim() || undefined,
+        fecha_vencimiento: fechaVencimiento || undefined,
+        detalles: detalles.map((d) => ({
+          producto_id: d.producto_id,
+          producto_empresa: d.producto_empresa,
+          cantidad: d.cantidad,
+          precio_unitario: d.precio_unitario,
+          descuento: d.descuento || 0,
+        })),
+      }
+
+      const factura = await apiPost<any>(API_ENDPOINTS.FACTURACION.FACTURAS, facturaData)
+
+      toast({
+        title: "Factura Creada",
+        description: `Factura ${factura.numero_factura} creada exitosamente`,
+      })
+
+      if (onFacturaCreada) {
+        onFacturaCreada(factura.id)
+      }
+
+      onOpenChange(false)
+    } catch (error: any) {
+      console.error("Error al crear factura:", error)
+      const errorMessage =
+        error.message || error.response?.data?.error || "No se pudo crear la factura"
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const clienteData = clientes.find((c) => String(c.id) === clienteSeleccionado)
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Crear Factura</DialogTitle>
+          <DialogDescription>
+            Crea una factura con productos de Ferretería, Bloquera y/o Piedrinera
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Selección de Cliente */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label>Cliente *</Label>
+              <Select value={clienteSeleccionado} onValueChange={setClienteSeleccionado} disabled={loading}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona un cliente" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clientes.map((cliente) => (
+                    <SelectItem key={cliente.id} value={String(cliente.id)}>
+                      {cliente.nombre} {cliente.nit && `(${cliente.nit})`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {clienteData && clienteData.permite_fiado && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Crédito disponible: Q{" "}
+                  {(clienteData.credito_disponible || 0).toLocaleString("es-GT", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <Label>Fecha de Vencimiento (Opcional)</Label>
+              <Input
+                type="date"
+                value={fechaVencimiento}
+                onChange={(e) => setFechaVencimiento(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Agregar Productos */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Agregar Productos</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <div>
+                  <Label>Empresa</Label>
+                  <Select value={empresaFiltro} onValueChange={(value: any) => setEmpresaFiltro(value)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TODAS">Todas</SelectItem>
+                      <SelectItem value="FERRETERIA">Ferretería</SelectItem>
+                      <SelectItem value="BLOQUERA">Bloquera</SelectItem>
+                      <SelectItem value="PIEDRINERA">Piedrinera</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <Label>Buscar Producto</Label>
+                  <div className="relative">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar por código o nombre..."
+                      value={searchProducto}
+                      onChange={(e) => setSearchProducto(e.target.value)}
+                      className="pl-8"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <div>
+                  <Label>Producto</Label>
+                  <Select
+                    value={productoSeleccionado}
+                    onValueChange={handleProductoChange}
+                    disabled={loadingProductos}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona producto" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {productosFiltrados.map((producto) => (
+                        <SelectItem key={`${producto.empresa}-${producto.id}`} value={String(producto.id)}>
+                          <div className="flex flex-col">
+                            <span>{producto.nombre}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {producto.codigo} - Stock: {producto.stock} {producto.unidadMedida}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Cantidad</Label>
+                  <Input
+                    type="number"
+                    min="0.01"
+                    step={productoSeleccionado && productosDisponibles.find(p => String(p.id) === productoSeleccionado)?.empresa === "PIEDRINERA" ? "0.01" : "1"}
+                    value={cantidadProducto}
+                    onChange={(e) => setCantidadProducto(Number(e.target.value))}
+                    placeholder="0"
+                  />
+                </div>
+
+                <div>
+                  <Label>Precio Unitario</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={precioProducto}
+                    onChange={(e) => setPrecioProducto(Number(e.target.value))}
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <div className="flex items-end">
+                  <Button type="button" onClick={handleAgregarProducto} className="w-full">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Agregar
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Detalles de la Factura */}
+          {detalles.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Detalles de la Factura</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Producto</TableHead>
+                      <TableHead>Empresa</TableHead>
+                      <TableHead>Cantidad</TableHead>
+                      <TableHead>Precio Unit.</TableHead>
+                      <TableHead className="text-right">Subtotal</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detalles.map((detalle, index) => (
+                      <TableRow key={index}>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{detalle.producto_nombre}</div>
+                            <div className="text-xs text-muted-foreground">{detalle.producto_codigo}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            className={
+                              detalle.producto_empresa === "FERRETERIA"
+                                ? "bg-blue-500"
+                                : detalle.producto_empresa === "BLOQUERA"
+                                ? "bg-green-500"
+                                : "bg-orange-500"
+                            }
+                          >
+                            {detalle.producto_empresa}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{detalle.cantidad}</TableCell>
+                        <TableCell>
+                          Q {detalle.precio_unitario.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          Q {detalle.subtotal.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEliminarDetalle(index)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+
+                <div className="mt-4 space-y-2">
+                  <div className="flex justify-between">
+                    <span>Subtotal:</span>
+                    <span className="font-medium">
+                      Q {calcularSubtotal().toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <Label>Descuento:</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={descuento}
+                        onChange={(e) => setDescuento(Number(e.target.value))}
+                        className="w-32"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-lg font-bold pt-2 border-t">
+                    <span>Total:</span>
+                    <span>
+                      Q {calcularTotal().toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Observaciones */}
+          <div>
+            <Label>Observaciones</Label>
+            <Textarea
+              value={observaciones}
+              onChange={(e) => setObservaciones(e.target.value)}
+              placeholder="Notas adicionales sobre la factura..."
+              rows={3}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={submitting || detalles.length === 0 || !clienteSeleccionado}>
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creando...
+                </>
+              ) : (
+                <>
+                  <ShoppingCart className="mr-2 h-4 w-4" />
+                  Crear Factura
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+

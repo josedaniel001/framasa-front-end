@@ -66,13 +66,13 @@ export default function AjustarInventarioPiedrineraPage() {
 
         // Mapear datos del backend al formato del frontend
         productosData = productosData.map((p: any) => ({
-          id: p.id || p.pk || '',
+          id: String(p.id || p.pk || ''),
           codigo: p.codigo || '',
           nombre: p.nombre || '',
-          descripcion: p.descripcion || '',
-          tipo: p.tipo || '',
-          stockActual: p.stock_actual || p.stockActual || 0,
-          stockMinimo: p.stock_minimo || p.stockMinimo || 0,
+          descripcion: p.descripcion || null,
+          tipo: p.tipo || null,
+          stockActual: p.stock ?? p.stock_actual ?? p.stockActual ?? 0,
+          stockMinimo: p.stockMinimo ?? p.stock_minimo ?? p.stockMinimo ?? 0,
           activo: p.activo !== undefined ? p.activo : true,
         }))
 

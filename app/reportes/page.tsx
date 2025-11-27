@@ -1,255 +1,244 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import {
-  Building2,
-  ShoppingCart,
-  Factory,
-  Truck,
-  Hammer,
-  FileSpreadsheet,
-} from "lucide-react"
-import ExcelJS from "exceljs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Loader2, Download, Package, TrendingUp, TrendingDown, AlertTriangle, RefreshCw, BarChart3, FileSpreadsheet } from "lucide-react"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet } from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
+import ExcelJS from "exceljs"
 
-// Datos estáticos de la empresa
-const empresaInfo = {
-  nombre: "FRAMASA",
-  nit: "12345678-9",
-  direccion: "Ciudad de Guatemala, Guatemala",
-  telefono: "+502 1234-5678",
-  email: "info@framasa.com",
+interface InventarioUnificado {
+  resumen_general: {
+    total_productos: number
+    productos_activos: number
+    productos_inactivos: number
+    productos_stock_bajo: number
+    valor_inventario_total: number
+  }
+  por_empresa: Array<{
+    empresa: string
+    total_productos: number
+    productos_activos: number
+    productos_inactivos: number
+    stock_total: number
+    stock_minimo_total: number
+    productos_stock_bajo: number
+    valor_inventario_estimado: number
+    unidades: string
+  }>
+  total_general: {
+    total_productos: number
+    productos_activos: number
+    productos_inactivos: number
+    productos_stock_bajo: number
+    valor_inventario_total: number
+  }
 }
 
-// Datos estáticos de Ferretería
-const ferreteriaData = {
-  ventasTotales: 125430.50,
-  totalFacturas: 342,
-  productosVendidos: 1847,
-  clientesActivos: 156,
-  productosEnStock: 1247,
-  productosBajoStock: 23,
-  topProductos: [
-    { nombre: "Cemento UGC 50kg", cantidad: 450, ingresos: 22500.00 },
-    { nombre: "Varilla #3", cantidad: 320, ingresos: 19200.00 },
-    { nombre: "Arena Fina", cantidad: 280, ingresos: 14000.00 },
-    { nombre: "Pintura Latex", cantidad: 150, ingresos: 11250.00 },
-    { nombre: "Clavos 2.5 pulgadas", cantidad: 200, ingresos: 8000.00 },
-  ],
-  topClientes: [
-    { nombre: "Constructora ABC", facturas: 45, total: 45000.00 },
-    { nombre: "Inmobiliaria XYZ", facturas: 32, total: 32000.00 },
-    { nombre: "Ingeniería 123", facturas: 28, total: 28000.00 },
-  ],
+interface TopProducto {
+  producto_id: number
+  producto_codigo: string
+  producto_nombre: string
+  empresa: string
+  cantidad_vendida: number
+  unidades: string
+  valor_total: number
 }
 
-// Datos estáticos de Bloquera
-const bloqueraData = {
-  produccionTotal: 12500,
-  unidadesVendidas: 11200,
-  ordenesCompletadas: 45,
-  ordenesPendientes: 8,
-  productosEnStock: 1300,
-  productosBajoStock: 5,
-  topProductos: [
-    { nombre: "Block 15x20x40", cantidad: 6500, ingresos: 32500.00 },
-    { nombre: "Block 20x20x40", cantidad: 3200, ingresos: 19200.00 },
-    { nombre: "Block 10x20x40", cantidad: 1500, ingresos: 7500.00 },
-  ],
-  ordenesRecientes: [
-    { numero: "BLQ-2024-001", cantidad: 500, estado: "Completada" },
-    { numero: "BLQ-2024-002", cantidad: 300, estado: "En Proceso" },
-    { numero: "BLQ-2024-003", cantidad: 200, estado: "Pendiente" },
-  ],
-}
-
-// Datos estáticos de Piedrinera
-const piedrineraData = {
-  despachosTotales: 342,
-  agregadosEnStock: 8450,
-  ordenesPendientes: 18,
-  camionesActivos: 12,
-  totalCamiones: 15,
-  topProductos: [
-    { nombre: "Arena Fina", cantidad: 1200, ingresos: 24000.00 },
-    { nombre: "Arena Gruesa", cantidad: 980, ingresos: 19600.00 },
-    { nombre: "Piedrín 3/4", cantidad: 850, ingresos: 25500.00 },
-    { nombre: "Piedrín 1/2", cantidad: 720, ingresos: 21600.00 },
-  ],
-  despachosRecientes: [
-    { orden: "PD-2024-001", cantidad: 12, destino: "Obra Central", estado: "Completado" },
-    { orden: "PD-2024-002", cantidad: 8, destino: "Proyecto Norte", estado: "En Ruta" },
-    { orden: "PD-2024-003", cantidad: 15, destino: "Construcción Sur", estado: "Pendiente" },
-  ],
-}
-
-// Datos estáticos de Taller
-const tallerData = {
-  ordenesCompletadas: 78,
-  ordenesEnProceso: 12,
-  ordenesPendientes: 5,
-  materialesEnStock: 456,
-  materialesBajoStock: 18,
-  serviciosRealizados: 156,
-  topMateriales: [
-    { nombre: "Aceite Motor 15W-40", cantidad: 45, ingresos: 2250.00 },
-    { nombre: "Filtro de Aire", cantidad: 32, ingresos: 1280.00 },
-    { nombre: "Bujías", cantidad: 28, ingresos: 1120.00 },
-    { nombre: "Frenos Delanteros", cantidad: 20, ingresos: 3000.00 },
-  ],
-  ordenesRecientes: [
-    { numero: "TAL-2024-001", equipo: "Excavadora CAT", servicio: "Mantenimiento", estado: "Completada" },
-    { numero: "TAL-2024-002", equipo: "Cargador", servicio: "Reparación", estado: "En Proceso" },
-    { numero: "TAL-2024-003", equipo: "Volquete", servicio: "Revisión", estado: "Pendiente" },
-  ],
+interface EstadisticaPredictiva {
+  empresa: string
+  producto_id: number
+  producto_codigo: string
+  producto_nombre: string
+  stock_actual: number
+  stock_minimo: number
+  promedio_ventas_diarias: number | null
+  promedio_ventas_semanales: number | null
+  promedio_ventas_mensuales: number | null
+  dias_restantes_estimados: number | null
+  necesita_reposicion: boolean
+  tendencia: "creciente" | "decreciente" | "estable" | null
+  unidades: string
 }
 
 export default function ReportesPage() {
   const { toast } = useToast()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState("inventario")
 
-  const exportarExcel = async (seccion: string, datos: any) => {
+  // Estados para Inventario Unificado
+  const [inventarioUnificado, setInventarioUnificado] = useState<InventarioUnificado | null>(null)
+
+  // Estados para Top Productos
+  const [topProductos, setTopProductos] = useState<TopProducto[]>([])
+  const [filtroEmpresaTop, setFiltroEmpresaTop] = useState("todas")
+  const [limitTop, setLimitTop] = useState("10")
+  const [fechaDesdeTop, setFechaDesdeTop] = useState("")
+  const [fechaHastaTop, setFechaHastaTop] = useState("")
+  const [loadingTop, setLoadingTop] = useState(false)
+
+  // Estados para Estadísticas Predictivas
+  const [estadisticas, setEstadisticas] = useState<EstadisticaPredictiva[]>([])
+  const [filtroEmpresaStats, setFiltroEmpresaStats] = useState("todas")
+  const [diasAnalisis, setDiasAnalisis] = useState("30")
+  const [loadingStats, setLoadingStats] = useState(false)
+
+  // Cargar inventario unificado al montar
+  useEffect(() => {
+    loadInventarioUnificado()
+  }, [])
+
+  const loadInventarioUnificado = async () => {
     try {
-      const workbook = new ExcelJS.Workbook()
-      const worksheet = workbook.addWorksheet("Resumen")
+      setLoading(true)
+      setError(null)
+      const endpoint = API_ENDPOINTS.REPORTES.INVENTARIO_UNIFICADO
+      console.log('🔍 [Reportes] Cargando inventario unificado desde:', endpoint)
+      const data = await apiGet<InventarioUnificado>(endpoint)
+      console.log('✅ [Reportes] Datos recibidos:', data)
+      setInventarioUnificado(data)
+      toast({
+        title: "Éxito",
+        description: "Inventario unificado cargado correctamente",
+      })
+    } catch (err: any) {
+      console.error("Error al cargar inventario unificado:", err)
+      const errorMessage = err.message || err.response?.data?.error || "Error al cargar el inventario unificado"
+      setError(errorMessage)
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
 
-      // Crear hoja de resumen
-      const resumenData: any[][] = [
-        ["REPORTE GENERAL - " + seccion.toUpperCase()],
-        ["Fecha de Generación", new Date().toLocaleDateString("es-GT")],
-        [""],
-        ["INDICADORES PRINCIPALES"],
-      ]
+  const loadTopProductos = async () => {
+    try {
+      setLoadingTop(true)
+      const params = new URLSearchParams()
+      params.append("empresa", filtroEmpresaTop)
+      params.append("limit", limitTop)
+      if (fechaDesdeTop) params.append("fecha_desde", fechaDesdeTop)
+      if (fechaHastaTop) params.append("fecha_hasta", fechaHastaTop)
 
-      // Agregar datos según la sección
-      if (seccion === "Ferretería") {
-        resumenData.push(
-          ["Ventas Totales", `Q ${datos.ventasTotales.toFixed(2)}`],
-          ["Total de Facturas", datos.totalFacturas],
-          ["Productos Vendidos", datos.productosVendidos],
-          ["Clientes Activos", datos.clientesActivos],
-          ["Productos en Stock", datos.productosEnStock],
-          ["Productos Bajo Stock", datos.productosBajoStock],
-          [""],
-          ["TOP PRODUCTOS"],
-          ["Producto", "Cantidad", "Ingresos (Q)"]
-        )
-        datos.topProductos.forEach((p: any) => {
-          resumenData.push([p.nombre, p.cantidad, p.ingresos.toFixed(2)])
-        })
-        resumenData.push([""], ["TOP CLIENTES"], ["Cliente", "Facturas", "Total (Q)"])
-        datos.topClientes.forEach((c: any) => {
-          resumenData.push([c.nombre, c.facturas, c.total.toFixed(2)])
-        })
-      } else if (seccion === "Bloquera") {
-        resumenData.push(
-          ["Producción Total", datos.produccionTotal],
-          ["Unidades Vendidas", datos.unidadesVendidas],
-          ["Órdenes Completadas", datos.ordenesCompletadas],
-          ["Órdenes Pendientes", datos.ordenesPendientes],
-          ["Productos en Stock", datos.productosEnStock],
-          ["Productos Bajo Stock", datos.productosBajoStock],
-          [""],
-          ["TOP PRODUCTOS"],
-          ["Producto", "Cantidad", "Ingresos (Q)"]
-        )
-        datos.topProductos.forEach((p: any) => {
-          resumenData.push([p.nombre, p.cantidad, p.ingresos.toFixed(2)])
-        })
-        resumenData.push([""], ["ÓRDENES RECIENTES"], ["Número", "Cantidad", "Estado"])
-        datos.ordenesRecientes.forEach((o: any) => {
-          resumenData.push([o.numero, o.cantidad, o.estado])
-        })
-      } else if (seccion === "Piedrinera") {
-        resumenData.push(
-          ["Despachos Totales", datos.despachosTotales],
-          ["Agregados en Stock (m³)", datos.agregadosEnStock],
-          ["Órdenes Pendientes", datos.ordenesPendientes],
-          ["Camiones Activos", `${datos.camionesActivos}/${datos.totalCamiones}`],
-          [""],
-          ["TOP PRODUCTOS"],
-          ["Producto", "Cantidad (m³)", "Ingresos (Q)"]
-        )
-        datos.topProductos.forEach((p: any) => {
-          resumenData.push([p.nombre, p.cantidad, p.ingresos.toFixed(2)])
-        })
-        resumenData.push([""], ["DESPACHOS RECIENTES"], ["Orden", "Cantidad (m³)", "Destino", "Estado"])
-        datos.despachosRecientes.forEach((d: any) => {
-          resumenData.push([d.orden, d.cantidad, d.destino, d.estado])
-        })
-      } else if (seccion === "Taller") {
-        resumenData.push(
-          ["Órdenes Completadas", datos.ordenesCompletadas],
-          ["Órdenes en Proceso", datos.ordenesEnProceso],
-          ["Órdenes Pendientes", datos.ordenesPendientes],
-          ["Materiales en Stock", datos.materialesEnStock],
-          ["Materiales Bajo Stock", datos.materialesBajoStock],
-          ["Servicios Realizados", datos.serviciosRealizados],
-          [""],
-          ["TOP MATERIALES"],
-          ["Material", "Cantidad", "Ingresos (Q)"]
-        )
-        datos.topMateriales.forEach((m: any) => {
-          resumenData.push([m.nombre, m.cantidad, m.ingresos.toFixed(2)])
-        })
-        resumenData.push([""], ["ÓRDENES RECIENTES"], ["Número", "Equipo", "Servicio", "Estado"])
-        datos.ordenesRecientes.forEach((o: any) => {
-          resumenData.push([o.numero, o.equipo, o.servicio, o.estado])
+      const url = `${API_ENDPOINTS.REPORTES.TOP_PRODUCTOS_VENDIDOS}?${params.toString()}`
+      const data = await apiGet<TopProducto[]>(url)
+      setTopProductos(Array.isArray(data) ? data : [])
+      if (data.length > 0) {
+        toast({
+          title: "Éxito",
+          description: `${data.length} productos cargados correctamente`,
         })
       }
+    } catch (err: any) {
+      console.error("Error al cargar top productos:", err)
+      const errorMessage = err.message || err.response?.data?.error || "No se pudieron cargar los productos más vendidos"
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      setTopProductos([])
+    } finally {
+      setLoadingTop(false)
+    }
+  }
 
-      // Agregar datos a la hoja
-      worksheet.addRows(resumenData)
+  const loadEstadisticasPredictivas = async () => {
+    try {
+      setLoadingStats(true)
+      const params = new URLSearchParams()
+      params.append("empresa", filtroEmpresaStats)
+      params.append("dias_analisis", diasAnalisis)
 
-      // Ajustar anchos de columna
-      worksheet.columns = [
-        { width: 30 },
-        { width: 20 },
-        { width: 20 },
-        { width: 20 },
-      ]
-
-      // Estilizar encabezados
-      worksheet.eachRow((row, rowNumber) => {
-        row.eachCell((cell, colNumber) => {
-          // Encabezado principal
-          if (rowNumber === 1) {
-            cell.font = { bold: true, size: 16 }
-            cell.alignment = { horizontal: "center" }
-          }
-          // Títulos de sección
-          else if (
-            rowNumber === 4 ||
-            (typeof resumenData[rowNumber - 1]?.[0] === "string" &&
-              (resumenData[rowNumber - 1][0].includes("TOP") ||
-                resumenData[rowNumber - 1][0].includes("ÓRDENES") ||
-                resumenData[rowNumber - 1][0].includes("DESPACHOS") ||
-                resumenData[rowNumber - 1][0].includes("CLIENTES")))
-          ) {
-            cell.font = { bold: true, size: 12 }
-          }
+      const url = `${API_ENDPOINTS.REPORTES.ESTADISTICAS_PREDICTIVAS}?${params.toString()}`
+      const data = await apiGet<EstadisticaPredictiva[]>(url)
+      setEstadisticas(Array.isArray(data) ? data : [])
+      if (data.length > 0) {
+        toast({
+          title: "Éxito",
+          description: `${data.length} productos analizados correctamente`,
         })
+      }
+    } catch (err: any) {
+      console.error("Error al cargar estadísticas predictivas:", err)
+      const errorMessage = err.message || err.response?.data?.error || "No se pudieron cargar las estadísticas predictivas"
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      setEstadisticas([])
+    } finally {
+      setLoadingStats(false)
+    }
+  }
+
+  // Función para exportar inventario unificado a Excel
+  const exportarInventarioExcel = async () => {
+    if (!inventarioUnificado) return
+
+    try {
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet("Inventario Unificado")
+
+      worksheet.addRows([
+        ["REPORTE DE INVENTARIO UNIFICADO"],
+        ["Fecha de Generación", new Date().toLocaleDateString("es-GT")],
+        [""],
+        ["RESUMEN GENERAL"],
+        ["Total Productos", inventarioUnificado.resumen_general.total_productos],
+        ["Productos Activos", inventarioUnificado.resumen_general.productos_activos],
+        ["Productos Inactivos", inventarioUnificado.resumen_general.productos_inactivos],
+        ["Productos Stock Bajo", inventarioUnificado.resumen_general.productos_stock_bajo],
+        ["Valor Total Inventario", `Q ${inventarioUnificado.resumen_general.valor_inventario_total.toFixed(2)}`],
+        [""],
+        ["DESGLOSE POR EMPRESA"],
+        ["Empresa", "Total Productos", "Activos", "Stock Total", "Stock Mínimo", "Stock Bajo", "Valor Inventario"],
+      ])
+
+      inventarioUnificado.por_empresa.forEach((emp) => {
+        worksheet.addRow([
+          emp.empresa,
+          emp.total_productos,
+          emp.productos_activos,
+          `${emp.stock_total} ${emp.unidades}`,
+          `${emp.stock_minimo_total} ${emp.unidades}`,
+          emp.productos_stock_bajo,
+          `Q ${emp.valor_inventario_estimado.toFixed(2)}`,
+        ])
       })
 
-      // Generar y descargar el archivo
-      const fileName = `Reporte_${seccion}_${new Date().toISOString().split("T")[0]}.xlsx`
+      worksheet.columns.forEach((column) => {
+        column.width = 20
+      })
+
       const buffer = await workbook.xlsx.writeBuffer()
-      
-      // Crear blob y descargar
       const blob = new Blob([buffer], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       })
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement("a")
       link.href = url
-      link.download = fileName
+      link.download = `Inventario_Unificado_${new Date().toISOString().split("T")[0]}.xlsx`
       link.click()
       window.URL.revokeObjectURL(url)
 
       toast({
         title: "Excel Generado",
-        description: `El reporte de ${seccion} se ha descargado exitosamente.`,
+        description: "El reporte de inventario se ha descargado exitosamente.",
       })
     } catch (error) {
       console.error("Error al generar Excel:", error)
@@ -261,359 +250,585 @@ export default function ReportesPage() {
     }
   }
 
+  // Función para exportar top productos a Excel
+  const exportarTopProductosExcel = async () => {
+    if (topProductos.length === 0) return
+
+    try {
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet("Top Productos")
+
+      worksheet.addRows([
+        ["REPORTE DE TOP PRODUCTOS VENDIDOS"],
+        ["Fecha de Generación", new Date().toLocaleDateString("es-GT")],
+        ["Empresa", filtroEmpresaTop === "todas" ? "Todas" : filtroEmpresaTop],
+        ["Límite", limitTop],
+        [""],
+        ["#", "Producto", "Código", "Empresa", "Cantidad Vendida", "Valor Total"],
+      ])
+
+      topProductos.forEach((producto, index) => {
+        worksheet.addRow([
+          index + 1,
+          producto.producto_nombre,
+          producto.producto_codigo,
+          producto.empresa,
+          `${producto.cantidad_vendida} ${producto.unidades}`,
+          `Q ${producto.valor_total.toFixed(2)}`,
+        ])
+      })
+
+      worksheet.columns.forEach((column) => {
+        column.width = 20
+      })
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `Top_Productos_${new Date().toISOString().split("T")[0]}.xlsx`
+      link.click()
+      window.URL.revokeObjectURL(url)
+
+      toast({
+        title: "Excel Generado",
+        description: "El reporte de top productos se ha descargado exitosamente.",
+      })
+    } catch (error) {
+      console.error("Error al generar Excel:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo generar el archivo Excel. Por favor, intenta de nuevo.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Función para exportar estadísticas predictivas a Excel
+  const exportarEstadisticasExcel = async () => {
+    if (estadisticas.length === 0) return
+
+    try {
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet("Estadísticas Predictivas")
+
+      worksheet.addRows([
+        ["REPORTE DE ESTADÍSTICAS PREDICTIVAS"],
+        ["Fecha de Generación", new Date().toLocaleDateString("es-GT")],
+        ["Empresa", filtroEmpresaStats === "todas" ? "Todas" : filtroEmpresaStats],
+        ["Días de Análisis", diasAnalisis],
+        [""],
+        ["Producto", "Código", "Empresa", "Stock Actual", "Stock Mínimo", "Promedio Diario", "Días Restantes", "Tendencia", "Estado"],
+      ])
+
+      estadisticas.forEach((stat) => {
+        worksheet.addRow([
+          stat.producto_nombre,
+          stat.producto_codigo,
+          stat.empresa,
+          `${stat.stock_actual} ${stat.unidades}`,
+          `${stat.stock_minimo} ${stat.unidades}`,
+          stat.promedio_ventas_diarias !== null
+            ? `${stat.promedio_ventas_diarias.toFixed(2)} ${stat.unidades}/día`
+            : "Sin datos",
+          stat.dias_restantes_estimados !== null ? `${stat.dias_restantes_estimados} días` : "N/A",
+          stat.tendencia || "Sin datos",
+          stat.necesita_reposicion ? "Reposición" : "Normal",
+        ])
+      })
+
+      worksheet.columns.forEach((column) => {
+        column.width = 20
+      })
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `Estadisticas_Predictivas_${new Date().toISOString().split("T")[0]}.xlsx`
+      link.click()
+      window.URL.revokeObjectURL(url)
+
+      toast({
+        title: "Excel Generado",
+        description: "El reporte de estadísticas predictivas se ha descargado exitosamente.",
+      })
+    } catch (error) {
+      console.error("Error al generar Excel:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo generar el archivo Excel. Por favor, intenta de nuevo.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const getEmpresaBadge = (empresa: string) => {
+    const colors: Record<string, string> = {
+      ferreteria: "bg-blue-500",
+      bloquera: "bg-green-500",
+      piedrinera: "bg-orange-500",
+    }
+    return (
+      <Badge className={colors[empresa] || "bg-gray-500"}>
+        {empresa.charAt(0).toUpperCase() + empresa.slice(1)}
+      </Badge>
+    )
+  }
+
+  const getTendenciaBadge = (tendencia: string | null) => {
+    if (!tendencia) return <Badge variant="outline">Sin datos</Badge>
+    switch (tendencia) {
+      case "creciente":
+        return (
+          <Badge className="bg-green-500">
+            <TrendingUp className="h-3 w-3 mr-1" />
+            Creciente
+          </Badge>
+        )
+      case "decreciente":
+        return (
+          <Badge className="bg-red-500">
+            <TrendingDown className="h-3 w-3 mr-1" />
+            Decreciente
+          </Badge>
+        )
+      case "estable":
+        return <Badge variant="secondary">Estable</Badge>
+      default:
+        return <Badge variant="outline">{tendencia}</Badge>
+    }
+  }
+
+  const formatNumber = (num: number, decimals: number = 2) => {
+    return num.toLocaleString("es-GT", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })
+  }
+
+  if (loading && !inventarioUnificado) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-muted-foreground">Cargando reportes...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error && !inventarioUnificado) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-center text-destructive">{error}</p>
+              <Button onClick={loadInventarioUnificado}>Reintentar</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Reportes Generales</h1>
-          <p className="text-muted-foreground">Información general de la empresa y sus secciones</p>
+          <h1 className="text-3xl font-bold">Reportes Unificados</h1>
+          <p className="text-muted-foreground">Análisis consolidado de Ferretería, Bloquera y Piedrinera</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={loadInventarioUnificado}>
+            <RefreshCw className="mr-2 h-4 w-4" /> Actualizar
+          </Button>
         </div>
       </div>
 
-      {/* Información de la Empresa */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Building2 className="h-5 w-5" />
-            Información de la Empresa
-          </CardTitle>
-          <CardDescription>Datos generales de FRAMASA</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Nombre</p>
-              <p className="text-lg font-semibold">{empresaInfo.nombre}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">NIT</p>
-              <p className="text-lg font-semibold">{empresaInfo.nit}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Dirección</p>
-              <p className="text-lg font-semibold">{empresaInfo.direccion}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Teléfono</p>
-              <p className="text-lg font-semibold">{empresaInfo.telefono}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="inventario">Inventario Unificado</TabsTrigger>
+          <TabsTrigger value="top-productos">Top Productos</TabsTrigger>
+          <TabsTrigger value="predictivas">Estadísticas Predictivas</TabsTrigger>
+        </TabsList>
 
-      {/* Sección Ferretería */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <ShoppingCart className="h-5 w-5" />
-                Ferretería
-              </CardTitle>
-              <CardDescription>Información general del módulo de ferretería</CardDescription>
-            </div>
-            <Button onClick={() => exportarExcel("Ferretería", ferreteriaData)} variant="outline">
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Exportar Excel
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Ventas Totales</p>
-              <p className="text-2xl font-bold">Q {ferreteriaData.ventasTotales.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Total de Facturas</p>
-              <p className="text-2xl font-bold">{ferreteriaData.totalFacturas}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Productos Vendidos</p>
-              <p className="text-2xl font-bold">{ferreteriaData.productosVendidos.toLocaleString()}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Clientes Activos</p>
-              <p className="text-2xl font-bold">{ferreteriaData.clientesActivos}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Productos en Stock</p>
-              <p className="text-2xl font-bold">{ferreteriaData.productosEnStock}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Productos Bajo Stock</p>
-              <p className="text-2xl font-bold text-orange-600">{ferreteriaData.productosBajoStock}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div>
-              <h3 className="font-semibold mb-3">Top 5 Productos</h3>
-              <div className="space-y-2">
-                {ferreteriaData.topProductos.map((producto, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 border rounded">
-                    <div>
-                      <p className="font-medium">{producto.nombre}</p>
-                      <p className="text-sm text-muted-foreground">Cantidad: {producto.cantidad}</p>
-                    </div>
-                    <p className="font-semibold">Q {producto.ingresos.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                  </div>
-                ))}
+        {/* Tab: Inventario Unificado */}
+        <TabsContent value="inventario" className="space-y-4">
+          {inventarioUnificado && (
+            <>
+              <div className="flex justify-end">
+                <Button onClick={exportarInventarioExcel} variant="outline">
+                  <FileSpreadsheet className="mr-2 h-4 w-4" /> Exportar Excel
+                </Button>
               </div>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-3">Top 3 Clientes</h3>
-              <div className="space-y-2">
-                {ferreteriaData.topClientes.map((cliente, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 border rounded">
-                    <div>
-                      <p className="font-medium">{cliente.nombre}</p>
-                      <p className="text-sm text-muted-foreground">{cliente.facturas} facturas</p>
+              {/* Resumen General */}
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Productos</CardTitle>
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{inventarioUnificado.resumen_general.total_productos}</div>
+                    <p className="text-xs text-muted-foreground">En todas las empresas</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Productos Activos</CardTitle>
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{inventarioUnificado.resumen_general.productos_activos}</div>
+                    <p className="text-xs text-muted-foreground">Disponibles para venta</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Stock Bajo</CardTitle>
+                    <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-orange-600">
+                      {inventarioUnificado.resumen_general.productos_stock_bajo}
                     </div>
-                    <p className="font-semibold">Q {cliente.total.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                  </div>
-                ))}
+                    <p className="text-xs text-muted-foreground">Necesitan reposición</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Valor Total</CardTitle>
+                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      Q {formatNumber(inventarioUnificado.resumen_general.valor_inventario_total)}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Valor estimado del inventario</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Productos Inactivos</CardTitle>
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{inventarioUnificado.resumen_general.productos_inactivos}</div>
+                    <p className="text-xs text-muted-foreground">No disponibles</p>
+                  </CardContent>
+                </Card>
               </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Sección Bloquera */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Factory className="h-5 w-5" />
-                Bloquera
-              </CardTitle>
-              <CardDescription>Información general del módulo de bloquera</CardDescription>
-            </div>
-            <Button onClick={() => exportarExcel("Bloquera", bloqueraData)} variant="outline">
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Exportar Excel
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Producción Total</p>
-              <p className="text-2xl font-bold">{bloqueraData.produccionTotal.toLocaleString()} unidades</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Unidades Vendidas</p>
-              <p className="text-2xl font-bold">{bloqueraData.unidadesVendidas.toLocaleString()}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Órdenes Completadas</p>
-              <p className="text-2xl font-bold">{bloqueraData.ordenesCompletadas}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Órdenes Pendientes</p>
-              <p className="text-2xl font-bold text-orange-600">{bloqueraData.ordenesPendientes}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Productos en Stock</p>
-              <p className="text-2xl font-bold">{bloqueraData.productosEnStock}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Productos Bajo Stock</p>
-              <p className="text-2xl font-bold text-orange-600">{bloqueraData.productosBajoStock}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div>
-              <h3 className="font-semibold mb-3">Top 3 Productos</h3>
-              <div className="space-y-2">
-                {bloqueraData.topProductos.map((producto, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 border rounded">
-                    <div>
-                      <p className="font-medium">{producto.nombre}</p>
-                      <p className="text-sm text-muted-foreground">Cantidad: {producto.cantidad}</p>
-                    </div>
-                    <p className="font-semibold">Q {producto.ingresos.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-3">Órdenes Recientes</h3>
-              <div className="space-y-2">
-                {bloqueraData.ordenesRecientes.map((orden, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 border rounded">
-                    <div>
-                      <p className="font-medium">{orden.numero}</p>
-                      <p className="text-sm text-muted-foreground">Cantidad: {orden.cantidad}</p>
-                    </div>
-                    <Badge variant={orden.estado === "Completada" ? "default" : orden.estado === "En Proceso" ? "secondary" : "outline"}>
-                      {orden.estado}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              {/* Desglose por Empresa */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Desglose por Empresa</CardTitle>
+                  <CardDescription>Detalle del inventario por cada empresa</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Empresa</TableHead>
+                        <TableHead>Total Productos</TableHead>
+                        <TableHead>Activos</TableHead>
+                        <TableHead>Stock Total</TableHead>
+                        <TableHead>Stock Mínimo</TableHead>
+                        <TableHead>Stock Bajo</TableHead>
+                        <TableHead className="text-right">Valor Inventario</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {inventarioUnificado.por_empresa.map((empresa) => (
+                        <TableRow key={empresa.empresa}>
+                          <TableCell className="font-medium">{getEmpresaBadge(empresa.empresa)}</TableCell>
+                          <TableCell>{empresa.total_productos}</TableCell>
+                          <TableCell>{empresa.productos_activos}</TableCell>
+                          <TableCell>
+                            {formatNumber(empresa.stock_total, empresa.unidades === "m³" ? 2 : 0)} {empresa.unidades}
+                          </TableCell>
+                          <TableCell>
+                            {formatNumber(empresa.stock_minimo_total, empresa.unidades === "m³" ? 2 : 0)} {empresa.unidades}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={empresa.productos_stock_bajo > 0 ? "destructive" : "secondary"}>
+                              {empresa.productos_stock_bajo}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            Q {formatNumber(empresa.valor_inventario_estimado)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </TabsContent>
 
-      {/* Sección Piedrinera */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Truck className="h-5 w-5" />
-                Piedrinera
-              </CardTitle>
-              <CardDescription>Información general del módulo de piedrinera</CardDescription>
-            </div>
-            <Button onClick={() => exportarExcel("Piedrinera", piedrineraData)} variant="outline">
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Exportar Excel
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Despachos Totales</p>
-              <p className="text-2xl font-bold">{piedrineraData.despachosTotales}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Agregados en Stock</p>
-              <p className="text-2xl font-bold">{piedrineraData.agregadosEnStock.toLocaleString()} m³</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Órdenes Pendientes</p>
-              <p className="text-2xl font-bold text-orange-600">{piedrineraData.ordenesPendientes}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Camiones Activos</p>
-              <p className="text-2xl font-bold">
-                {piedrineraData.camionesActivos}/{piedrineraData.totalCamiones}
-              </p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div>
-              <h3 className="font-semibold mb-3">Top 4 Productos</h3>
-              <div className="space-y-2">
-                {piedrineraData.topProductos.map((producto, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 border rounded">
-                    <div>
-                      <p className="font-medium">{producto.nombre}</p>
-                      <p className="text-sm text-muted-foreground">Cantidad: {producto.cantidad} m³</p>
-                    </div>
-                    <p className="font-semibold">Q {producto.ingresos.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                  </div>
-                ))}
+        {/* Tab: Top Productos Vendidos */}
+        <TabsContent value="top-productos" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Top Productos Más Vendidos</CardTitle>
+                  <CardDescription>Ranking de productos con mayor volumen de ventas</CardDescription>
+                </div>
+                {topProductos.length > 0 && (
+                  <Button onClick={exportarTopProductosExcel} variant="outline">
+                    <FileSpreadsheet className="mr-2 h-4 w-4" /> Exportar Excel
+                  </Button>
+                )}
               </div>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-3">Despachos Recientes</h3>
-              <div className="space-y-2">
-                {piedrineraData.despachosRecientes.map((despacho, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 border rounded">
-                    <div>
-                      <p className="font-medium">{despacho.orden}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {despacho.cantidad} m³ - {despacho.destino}
-                      </p>
-                    </div>
-                    <Badge variant={despacho.estado === "Completado" ? "default" : despacho.estado === "En Ruta" ? "secondary" : "outline"}>
-                      {despacho.estado}
-                    </Badge>
-                  </div>
-                ))}
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div>
+                  <Label>Empresa</Label>
+                  <Select value={filtroEmpresaTop} onValueChange={setFiltroEmpresaTop}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="ferreteria">Ferretería</SelectItem>
+                      <SelectItem value="bloquera">Bloquera</SelectItem>
+                      <SelectItem value="piedrinera">Piedrinera</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Cantidad</Label>
+                  <Select value={limitTop} onValueChange={setLimitTop}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5">Top 5</SelectItem>
+                      <SelectItem value="10">Top 10</SelectItem>
+                      <SelectItem value="20">Top 20</SelectItem>
+                      <SelectItem value="50">Top 50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Fecha Desde</Label>
+                  <Input
+                    type="date"
+                    value={fechaDesdeTop}
+                    onChange={(e) => setFechaDesdeTop(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label>Fecha Hasta</Label>
+                  <Input
+                    type="date"
+                    value={fechaHastaTop}
+                    onChange={(e) => setFechaHastaTop(e.target.value)}
+                  />
+                </div>
               </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              <Button onClick={loadTopProductos} disabled={loadingTop} className="mb-4">
+                {loadingTop ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Cargando...
+                  </>
+                ) : (
+                  <>
+                    <BarChart3 className="mr-2 h-4 w-4" />
+                    Generar Reporte
+                  </>
+                )}
+              </Button>
 
-      {/* Sección Taller */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Hammer className="h-5 w-5" />
-                Taller
-              </CardTitle>
-              <CardDescription>Información general del módulo de taller</CardDescription>
-            </div>
-            <Button onClick={() => exportarExcel("Taller", tallerData)} variant="outline">
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Exportar Excel
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Órdenes Completadas</p>
-              <p className="text-2xl font-bold">{tallerData.ordenesCompletadas}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Órdenes en Proceso</p>
-              <p className="text-2xl font-bold text-blue-600">{tallerData.ordenesEnProceso}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Órdenes Pendientes</p>
-              <p className="text-2xl font-bold text-orange-600">{tallerData.ordenesPendientes}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Materiales en Stock</p>
-              <p className="text-2xl font-bold">{tallerData.materialesEnStock}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Materiales Bajo Stock</p>
-              <p className="text-2xl font-bold text-orange-600">{tallerData.materialesBajoStock}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">Servicios Realizados</p>
-              <p className="text-2xl font-bold">{tallerData.serviciosRealizados}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div>
-              <h3 className="font-semibold mb-3">Top 4 Materiales</h3>
-              <div className="space-y-2">
-                {tallerData.topMateriales.map((material, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 border rounded">
-                    <div>
-                      <p className="font-medium">{material.nombre}</p>
-                      <p className="text-sm text-muted-foreground">Cantidad: {material.cantidad}</p>
-                    </div>
-                    <p className="font-semibold">Q {material.ingresos.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                  </div>
-                ))}
+              {topProductos.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>#</TableHead>
+                      <TableHead>Producto</TableHead>
+                      <TableHead>Empresa</TableHead>
+                      <TableHead>Cantidad Vendida</TableHead>
+                      <TableHead className="text-right">Valor Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {topProductos.map((producto, index) => (
+                      <TableRow key={producto.producto_id}>
+                        <TableCell className="font-medium">{index + 1}</TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{producto.producto_nombre}</div>
+                            <div className="text-sm text-muted-foreground">{producto.producto_codigo}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>{getEmpresaBadge(producto.empresa)}</TableCell>
+                        <TableCell>
+                          {formatNumber(producto.cantidad_vendida, producto.unidades === "m³" ? 2 : 0)} {producto.unidades}
+                        </TableCell>
+                        <TableCell className="text-right">Q {formatNumber(producto.valor_total)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+              {topProductos.length === 0 && !loadingTop && (
+                <p className="text-center text-muted-foreground py-8">
+                  No hay datos disponibles. Haz clic en "Generar Reporte" para cargar los datos.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab: Estadísticas Predictivas */}
+        <TabsContent value="predictivas" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Estadísticas Predictivas</CardTitle>
+                  <CardDescription>
+                    Análisis predictivo basado en historial de ventas y tendencias de stock
+                  </CardDescription>
+                </div>
+                {estadisticas.length > 0 && (
+                  <Button onClick={exportarEstadisticasExcel} variant="outline">
+                    <FileSpreadsheet className="mr-2 h-4 w-4" /> Exportar Excel
+                  </Button>
+                )}
               </div>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-3">Órdenes Recientes</h3>
-              <div className="space-y-2">
-                {tallerData.ordenesRecientes.map((orden, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 border rounded">
-                    <div>
-                      <p className="font-medium">{orden.numero}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {orden.equipo} - {orden.servicio}
-                      </p>
-                    </div>
-                    <Badge variant={orden.estado === "Completada" ? "default" : orden.estado === "En Proceso" ? "secondary" : "outline"}>
-                      {orden.estado}
-                    </Badge>
-                  </div>
-                ))}
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                  <Label>Empresa</Label>
+                  <Select value={filtroEmpresaStats} onValueChange={setFiltroEmpresaStats}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="ferreteria">Ferretería</SelectItem>
+                      <SelectItem value="bloquera">Bloquera</SelectItem>
+                      <SelectItem value="piedrinera">Piedrinera</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Días de Análisis</Label>
+                  <Select value={diasAnalisis} onValueChange={setDiasAnalisis}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="15">Últimos 15 días</SelectItem>
+                      <SelectItem value="30">Últimos 30 días</SelectItem>
+                      <SelectItem value="60">Últimos 60 días</SelectItem>
+                      <SelectItem value="90">Últimos 90 días</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end">
+                  <Button onClick={loadEstadisticasPredictivas} disabled={loadingStats} className="w-full">
+                    {loadingStats ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Cargando...
+                      </>
+                    ) : (
+                      <>
+                        <TrendingUp className="mr-2 h-4 w-4" />
+                        Generar Análisis
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+
+              {estadisticas.length > 0 && (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Producto</TableHead>
+                        <TableHead>Empresa</TableHead>
+                        <TableHead>Stock Actual</TableHead>
+                        <TableHead>Stock Mínimo</TableHead>
+                        <TableHead>Promedio Diario</TableHead>
+                        <TableHead>Días Restantes</TableHead>
+                        <TableHead>Tendencia</TableHead>
+                        <TableHead>Estado</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {estadisticas.map((stat) => (
+                        <TableRow key={`${stat.empresa}-${stat.producto_id}`}>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{stat.producto_nombre}</div>
+                              <div className="text-sm text-muted-foreground">{stat.producto_codigo}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>{getEmpresaBadge(stat.empresa)}</TableCell>
+                          <TableCell>
+                            {formatNumber(stat.stock_actual, stat.unidades === "m³" ? 2 : 0)} {stat.unidades}
+                          </TableCell>
+                          <TableCell>
+                            {formatNumber(stat.stock_minimo, stat.unidades === "m³" ? 2 : 0)} {stat.unidades}
+                          </TableCell>
+                          <TableCell>
+                            {stat.promedio_ventas_diarias !== null
+                              ? `${formatNumber(stat.promedio_ventas_diarias, stat.unidades === "m³" ? 2 : 0)} ${stat.unidades}/día`
+                              : "Sin datos"}
+                          </TableCell>
+                          <TableCell>
+                            {stat.dias_restantes_estimados !== null ? (
+                              <Badge variant={stat.dias_restantes_estimados < 7 ? "destructive" : "secondary"}>
+                                {stat.dias_restantes_estimados} días
+                              </Badge>
+                            ) : (
+                              "N/A"
+                            )}
+                          </TableCell>
+                          <TableCell>{getTendenciaBadge(stat.tendencia)}</TableCell>
+                          <TableCell>
+                            {stat.necesita_reposicion ? (
+                              <Badge variant="destructive">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                Reposición
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary">Normal</Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+              {estadisticas.length === 0 && !loadingStats && (
+                <p className="text-center text-muted-foreground py-8">
+                  No hay datos disponibles. Haz clic en "Generar Análisis" para cargar las estadísticas.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
-

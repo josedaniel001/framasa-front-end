@@ -48,21 +48,28 @@ export async function apiGet<T>(endpoint: string): Promise<T> {
     let errorMessage = `API Error: ${response.status} ${response.statusText}`
     try {
       const errorData = await response.json()
-      if (errorData.detail) {
+      // Priorizar error, luego detail, luego message para compatibilidad con ambos formatos
+      if (errorData.error) {
+        errorMessage = errorData.error
+      } else if (errorData.detail) {
         errorMessage = errorData.detail
       } else if (errorData.message) {
         errorMessage = errorData.message
-      } else if (errorData.error) {
-        errorMessage = errorData.error
       } else if (typeof errorData === 'string') {
         errorMessage = errorData
       }
     } catch {
       // Si no se puede parsear el JSON, usar el mensaje por defecto
     }
-    const error = new Error(errorMessage) as any
+    const error: any = new Error(errorMessage)
     error.status = response.status
-    error.response = response
+    // Intentar obtener el error data para el objeto response, pero no fallar si no se puede
+    try {
+      const errorData = await response.clone().json().catch(() => ({}))
+      error.response = { data: errorData }
+    } catch {
+      error.response = response
+    }
     throw error
   }
   

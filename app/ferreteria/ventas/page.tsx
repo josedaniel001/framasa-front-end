@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { PlusCircle, Search, DollarSign, Clock, CheckCircle, XCircle, Eye, Edit, Filter, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from "lucide-react"
+import { PlusCircle, Search, DollarSign, Clock, CheckCircle, XCircle, Eye, Edit, Filter, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon, Loader2, RefreshCw } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -23,59 +23,142 @@ import {
   PaginationEllipsis,
 } from "@/components/ui/pagination"
 import Link from "next/link"
-import { getSampleVentasFerreteria } from "@/lib/sample-data"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet } from "@/lib/api-client"
+import { useToast } from "@/hooks/use-toast"
 
-const ITEMS_PER_PAGE = 5
+const ITEMS_PER_PAGE = 10
+
+interface Factura {
+  id: number
+  numero_factura: string
+  empresa: string
+  empresa_display: string
+  cliente_id: number
+  cliente_nombre: string
+  cliente_nit: string | null
+  subtotal: number
+  descuento: number
+  total: number
+  total_pagado: number
+  saldo_pendiente: number
+  estado: string
+  estado_display: string
+  fecha_factura: string
+  fecha_vencimiento: string | null
+  observaciones: string | null
+}
+
+interface FacturaListResponse {
+  count: number
+  next: string | null
+  previous: string | null
+  results: Factura[]
+}
 
 export default function VentasFerreteriaPage() {
-  const ventas = getSampleVentasFerreteria()
+  const { toast } = useToast()
+  const [facturas, setFacturas] = useState<Factura[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
+  const [stats, setStats] = useState<any>(null)
   const [filters, setFilters] = useState({
     estado: "todos",
     periodo: "todos",
+    empresa: "todos",
   })
 
-  // Filtrar ventas
-  const filteredVentas = useMemo(() => {
-    return ventas.filter((venta) => {
-      // Búsqueda por texto
-      const matchesSearch =
-        venta.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        venta.cliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        venta.estado.toLowerCase().includes(searchTerm.toLowerCase())
+  // Cargar facturas desde la API
+  useEffect(() => {
+    loadFacturas()
+    loadStats()
+  }, [currentPage, filters, searchTerm])
 
-      // Filtro por estado
-      const matchesEstado = filters.estado === "todos" || venta.estado === filters.estado
+  const loadFacturas = async () => {
+    try {
+      setLoading(true)
+      setError(null)
 
-      // Filtro por periodo
-      const ventaFecha = new Date(venta.fecha)
-      const hoy = new Date()
-      let matchesPeriodo = true
+      const params = new URLSearchParams()
+      params.append("page", String(currentPage))
 
-      if (filters.periodo === "hoy") {
-        matchesPeriodo =
-          ventaFecha.getDate() === hoy.getDate() &&
-          ventaFecha.getMonth() === hoy.getMonth() &&
-          ventaFecha.getFullYear() === hoy.getFullYear()
-      } else if (filters.periodo === "mes") {
-        matchesPeriodo =
-          ventaFecha.getMonth() === hoy.getMonth() && ventaFecha.getFullYear() === hoy.getFullYear()
-      } else if (filters.periodo === "semana") {
-        const semanaAtras = new Date(hoy)
-        semanaAtras.setDate(hoy.getDate() - 7)
-        matchesPeriodo = ventaFecha >= semanaAtras
+      // Filtros
+      if (filters.estado !== "todos") {
+        // Mapear estados de UI a estados de API
+        const estadoMap: Record<string, string> = {
+          "Pendiente": "PENDIENTE",
+          "Completada": "PAGADA",
+          "Cancelada": "ANULADA",
+        }
+        params.append("estado", estadoMap[filters.estado] || filters.estado)
       }
 
-      return matchesSearch && matchesEstado && matchesPeriodo
-    })
-  }, [ventas, searchTerm, filters])
+      if (filters.empresa !== "todos") {
+        params.append("empresa", filters.empresa)
+      }
 
-  // Paginación
-  const totalPages = Math.ceil(filteredVentas.length / ITEMS_PER_PAGE)
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
-  const endIndex = startIndex + ITEMS_PER_PAGE
-  const paginatedVentas = filteredVentas.slice(startIndex, endIndex)
+      // Filtro por período
+      if (filters.periodo !== "todos") {
+        const hoy = new Date()
+        let fechaDesde = ""
+        if (filters.periodo === "hoy") {
+          fechaDesde = hoy.toISOString().split("T")[0]
+        } else if (filters.periodo === "semana") {
+          const semanaAtras = new Date(hoy)
+          semanaAtras.setDate(hoy.getDate() - 7)
+          fechaDesde = semanaAtras.toISOString().split("T")[0]
+        } else if (filters.periodo === "mes") {
+          const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+          fechaDesde = inicioMes.toISOString().split("T")[0]
+        }
+        if (fechaDesde) {
+          params.append("fecha_desde", fechaDesde)
+        }
+        params.append("fecha_hasta", hoy.toISOString().split("T")[0])
+      }
+
+      // Búsqueda
+      if (searchTerm) {
+        params.append("numero", searchTerm)
+      }
+
+      const url = `${API_ENDPOINTS.FACTURACION.FACTURAS}?${params.toString()}`
+      const data = await apiGet<FacturaListResponse>(url)
+
+      setFacturas(data.results || [])
+      setTotalCount(data.count || 0)
+      setTotalPages(Math.ceil((data.count || 0) / ITEMS_PER_PAGE))
+    } catch (err: any) {
+      console.error("Error al cargar facturas:", err)
+      setError(err.message || "Error al cargar las facturas")
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las facturas",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadStats = async () => {
+    try {
+      const hoy = new Date()
+      const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+      const params = new URLSearchParams()
+      params.append("fecha_desde", inicioMes.toISOString().split("T")[0])
+      params.append("fecha_hasta", hoy.toISOString().split("T")[0])
+
+      const data = await apiGet<any>(`${API_ENDPOINTS.FACTURACION.FACTURAS_ESTADISTICAS}?${params.toString()}`)
+      setStats(data)
+    } catch (err) {
+      console.error("Error al cargar estadísticas:", err)
+    }
+  }
 
   // Resetear página cuando cambian los filtros
   const handleFilterChange = (key: string, value: string) => {
@@ -89,31 +172,59 @@ export default function VentasFerreteriaPage() {
   }
 
   const clearFilters = () => {
-    setFilters({ estado: "todos", periodo: "todos" })
+    setFilters({ estado: "todos", periodo: "todos", empresa: "todos" })
     setSearchTerm("")
     setCurrentPage(1)
   }
 
-  const hasActiveFilters = filters.estado !== "todos" || filters.periodo !== "todos"
+  const hasActiveFilters = filters.estado !== "todos" || filters.periodo !== "todos" || filters.empresa !== "todos"
 
-  const totalVentasMes = ventas
-    .filter((v) => new Date(v.fecha).getMonth() === new Date().getMonth())
-    .reduce((sum, v) => sum + v.total, 0)
-  const ventasPendientes = ventas.filter((v) => v.estado === "Pendiente").length
-  const ventasCompletadas = ventas.filter((v) => v.estado === "Completada").length
-  const ventasCanceladas = ventas.filter((v) => v.estado === "Cancelada").length
+  // Calcular estadísticas desde los datos de la API
+  const totalVentasMes = stats?.total_ventas || 0
+  const ventasPendientes = stats?.por_estado?.find((e: any) => e.estado === "PENDIENTE")?.count || 0
+  const ventasCompletadas = stats?.por_estado?.find((e: any) => e.estado === "PAGADA")?.count || 0
+  const ventasCanceladas = stats?.por_estado?.find((e: any) => e.estado === "ANULADA")?.count || 0
 
   const getStatusVariant = (status: string) => {
     switch (status) {
-      case "Completada":
+      case "PAGADA":
         return "default"
-      case "Pendiente":
+      case "PENDIENTE":
         return "secondary"
-      case "Cancelada":
+      case "PARCIAL":
+        return "secondary"
+      case "ANULADA":
         return "destructive"
+      case "BORRADOR":
+        return "outline"
       default:
         return "outline"
     }
+  }
+
+  const getStatusDisplay = (status: string) => {
+    switch (status) {
+      case "PAGADA":
+        return "Pagada"
+      case "PENDIENTE":
+        return "Pendiente"
+      case "PARCIAL":
+        return "Pago Parcial"
+      case "ANULADA":
+        return "Anulada"
+      case "BORRADOR":
+        return "Borrador"
+      default:
+        return status
+    }
+  }
+
+  const formatFecha = (fecha: string) => {
+    return new Date(fecha).toLocaleDateString("es-GT", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    })
   }
 
   return (
@@ -134,7 +245,9 @@ export default function VentasFerreteriaPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">Q{totalVentasMes.toFixed(2)}</div>
+            <div className="text-2xl font-bold">
+              Q{stats?.total_ventas?.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0.00"}
+            </div>
             <p className="text-xs text-muted-foreground">Total de ingresos este mes</p>
           </CardContent>
         </Card>
@@ -223,8 +336,26 @@ export default function VentasFerreteriaPage() {
                           <SelectContent>
                             <SelectItem value="todos">Todos</SelectItem>
                             <SelectItem value="Pendiente">Pendientes</SelectItem>
-                            <SelectItem value="Completada">Completadas</SelectItem>
-                            <SelectItem value="Cancelada">Canceladas</SelectItem>
+                            <SelectItem value="Completada">Pagadas</SelectItem>
+                            <SelectItem value="Cancelada">Anuladas</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="empresa">Empresa</Label>
+                        <Select
+                          value={filters.empresa}
+                          onValueChange={(value) => handleFilterChange("empresa", value)}
+                        >
+                          <SelectTrigger id="empresa">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="todos">Todas</SelectItem>
+                            <SelectItem value="FERRETERIA">Ferretería</SelectItem>
+                            <SelectItem value="BLOQUERA">Bloquera</SelectItem>
+                            <SelectItem value="PIEDRINERA">Piedrinera</SelectItem>
+                            <SelectItem value="MIXTA">Mixta</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -279,55 +410,102 @@ export default function VentasFerreteriaPage() {
                     </button>
                   </Badge>
                 )}
+                {filters.empresa !== "todos" && (
+                  <Badge variant="secondary" className="gap-1">
+                    Empresa: {filters.empresa}
+                    <button
+                      onClick={() => handleFilterChange("empresa", "todos")}
+                      className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
               </div>
             )}
           </div>
-          <div className="mb-4 text-sm text-muted-foreground">
-            Mostrando {startIndex + 1}-{Math.min(endIndex, filteredVentas.length)} de {filteredVentas.length} ventas
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm text-muted-foreground">
+              Mostrando {facturas.length > 0 ? (currentPage - 1) * ITEMS_PER_PAGE + 1 : 0}-
+              {Math.min(currentPage * ITEMS_PER_PAGE, totalCount)} de {totalCount} facturas
+            </div>
+            <Button variant="outline" size="sm" onClick={() => loadFacturas()}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Actualizar
+            </Button>
           </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Total</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginatedVentas.map((venta) => (
-                <TableRow key={venta.id}>
-                  <TableCell className="font-medium">{venta.codigo}</TableCell>
-                  <TableCell>{venta.fecha}</TableCell>
-                  <TableCell>{venta.cliente}</TableCell>
-                  <TableCell>Q{venta.total.toFixed(2)}</TableCell>
-                  <TableCell>
-                    <Badge variant={getStatusVariant(venta.estado)}>{venta.estado}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Link href={`/ferreteria/ventas/${venta.id}`}>
-                        <Button variant="outline" size="sm">
-                          <Eye className="h-4 w-4" />
-                          <span className="sr-only">Ver</span>
-                        </Button>
-                      </Link>
-                      <Link href={`/ferreteria/ventas/${venta.id}/editar`}>
-                        <Button variant="outline" size="sm">
-                          <Edit className="h-4 w-4" />
-                          <span className="sr-only">Editar</span>
-                        </Button>
-                      </Link>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {paginatedVentas.length === 0 && (
-            <p className="text-center text-muted-foreground mt-4">No se encontraron ventas.</p>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : error ? (
+            <div className="text-center text-destructive py-8">{error}</div>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Número Factura</TableHead>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Empresa</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead>Saldo</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {facturas.map((factura) => (
+                    <TableRow key={factura.id}>
+                      <TableCell className="font-medium">{factura.numero_factura}</TableCell>
+                      <TableCell>{formatFecha(factura.fecha_factura)}</TableCell>
+                      <TableCell>
+                        <div>
+                          <div>{factura.cliente_nombre}</div>
+                          {factura.cliente_nit && (
+                            <div className="text-xs text-muted-foreground">{factura.cliente_nit}</div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{factura.empresa_display || factura.empresa}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        Q{factura.total.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell>
+                        {factura.saldo_pendiente > 0 ? (
+                          <span className="text-red-600 font-medium">
+                            Q{factura.saldo_pendiente.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        ) : (
+                          <span className="text-green-600">Pagado</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={getStatusVariant(factura.estado)}>
+                          {getStatusDisplay(factura.estado)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Link href={`/ferreteria/ventas/${factura.id}`}>
+                            <Button variant="outline" size="sm">
+                              <Eye className="h-4 w-4" />
+                              <span className="sr-only">Ver</span>
+                            </Button>
+                          </Link>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {facturas.length === 0 && (
+                <p className="text-center text-muted-foreground mt-4">No se encontraron facturas.</p>
+              )}
+            </>
           )}
           {totalPages > 1 && (
             <div className="mt-4">

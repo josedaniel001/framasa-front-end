@@ -88,6 +88,44 @@ export const API_ENDPOINTS = {
   TALLER: {
     // Sección reservada para futuras funcionalidades del taller
   },
+  REPORTES: {
+    get INVENTARIO_UNIFICADO() {
+      return nextApiEndpoint('/api/reportes/inventario-unificado')
+    },
+    get TOP_PRODUCTOS_VENDIDOS() {
+      return nextApiEndpoint('/api/reportes/top-productos-vendidos')
+    },
+    get ESTADISTICAS_PREDICTIVAS() {
+      return nextApiEndpoint('/api/reportes/estadisticas-predictivas')
+    },
+  },
+  FACTURACION: {
+    get FACTURAS() {
+      return nextApiEndpoint('/api/facturacion/facturas')
+    },
+    FACTURA(id: number | string) {
+      return `${nextApiEndpoint('/api/facturacion/facturas')}/${id}`
+    },
+    FACTURA_AGREGAR_PAGOS_MULTIPLES(id: number | string) {
+      return `${nextApiEndpoint('/api/facturacion/facturas')}/${id}/agregar-pagos-multiples`
+    },
+    FACTURA_ANULAR(id: number | string) {
+      return `${nextApiEndpoint('/api/facturacion/facturas')}/${id}/anular`
+    },
+    get FACTURAS_ESTADISTICAS() {
+      return nextApiEndpoint('/api/facturacion/facturas/estadisticas')
+    },
+    PAGOS: nextApiEndpoint('/api/facturacion/pagos'),
+    PAGO: (id: string | number) => nextApiEndpoint(`/api/facturacion/pagos/${id}`),
+    get COTIZACIONES() {
+      return nextApiEndpoint('/api/facturacion/cotizaciones')
+    },
+    COTIZACION: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}`),
+    COTIZACION_ENVIAR: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}/enviar`),
+    COTIZACION_ACEPTAR: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}/aceptar`),
+    COTIZACION_RECHAZAR: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}/rechazar`),
+    COTIZACION_CONVERTIR_FACTURA: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}/convertir_a_factura`),
+  },
 }
 
 export default DJANGO_API_BASE
