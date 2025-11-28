@@ -86,7 +86,18 @@ export const API_ENDPOINTS = {
     },
   },
   TALLER: {
-    // Sección reservada para futuras funcionalidades del taller
+    get MAQUINARIA() {
+      return nextApiEndpoint('/api/taller/maquinaria')
+    },
+    MAQUINARIA_ITEM(id: number | string) {
+      return `${nextApiEndpoint('/api/taller/maquinaria')}/${id}`
+    },
+    get MAQUINARIA_TIPOS() {
+      return nextApiEndpoint('/api/taller/maquinaria/tipos')
+    },
+    get MAQUINARIA_EMPRESAS() {
+      return nextApiEndpoint('/api/taller/maquinaria/empresas')
+    },
   },
   REPORTES: {
     get INVENTARIO_UNIFICADO() {
