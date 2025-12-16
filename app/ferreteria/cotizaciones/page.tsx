@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { PlusCircle, Search, FileText, Clock, CheckCircle, XCircle, Eye, Edit, Filter, X, Download, RefreshCw, DollarSign, TrendingUp, Percent, Calendar, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon, Loader2 } from "lucide-react"
+import { PlusCircle, Search, FileText, Clock, CheckCircle, XCircle, Eye, Edit, Filter, X, Download, RefreshCw, DollarSign, TrendingUp, Percent, Calendar, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon, Loader2, Trash2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -26,6 +26,18 @@ import Link from "next/link"
 import { API_ENDPOINTS } from "@/lib/api-config"
 import { apiGet } from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/hooks/use-auth"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 const ITEMS_PER_PAGE = 10
 
@@ -71,6 +83,7 @@ interface CotizacionListResponse {
 
 export default function CotizacionesFerreteriaPage() {
   const { toast } = useToast()
+  const { token } = useAuth()
   const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -78,6 +91,7 @@ export default function CotizacionesFerreteriaPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
   const [filters, setFilters] = useState({
     estado: "todos",
     periodo: "todos",
@@ -178,18 +192,70 @@ export default function CotizacionesFerreteriaPage() {
   const hasActiveFilters =
     filters.estado !== "todos" || filters.periodo !== "todos" || filters.empresa !== "todos"
 
+  // Función para eliminar cotización
+  const handleDeleteCotizacion = async (id: number) => {
+    if (!token) {
+      toast({
+        title: "Error",
+        description: "No estás autenticado",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setDeletingId(id)
+    try {
+      const response = await fetch(`/api/facturacion/cotizaciones/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || errorData.detail || "Error al eliminar la cotización")
+      }
+
+      toast({
+        title: "Cotización eliminada",
+        description: "La cotización ha sido eliminada exitosamente",
+      })
+
+      // Recargar la lista
+      loadCotizaciones()
+    } catch (err: any) {
+      console.error("Error al eliminar cotización:", err)
+      toast({
+        title: "Error",
+        description: err.message || "No se pudo eliminar la cotización",
+        variant: "destructive",
+      })
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  // Función para calcular el total correcto de una cotización
+  // El total es la suma de los subtotales de los detalles (con descuentos ya aplicados)
+  // IMPORTANTE: Convertir a Number porque los valores pueden venir como strings del backend
+  const calcularTotalCotizacion = (c: Cotizacion) => {
+    return c.detalles?.reduce((sum, d) => sum + (Number(d.subtotal) || 0), 0) || 0
+  }
+
   // Estadísticas
   const totalCotizaciones = totalCount
   const cotizacionesPendientes = cotizaciones.filter((c) => c.estado === "ENVIADA" || c.estado === "BORRADOR").length
   const cotizacionesAceptadas = cotizaciones.filter((c) => c.estado === "ACEPTADA").length
   const cotizacionesRechazadas = cotizaciones.filter((c) => c.estado === "RECHAZADA").length
-  const valorTotalCotizaciones = cotizaciones.reduce((sum, c) => sum + (c.total || 0), 0)
+  const valorTotalCotizaciones = cotizaciones.reduce((sum, c) => sum + calcularTotalCotizacion(c), 0)
   const valorCotizacionesAceptadas = cotizaciones
     .filter((c) => c.estado === "ACEPTADA")
-    .reduce((sum, c) => sum + (c.total || 0), 0)
+    .reduce((sum, c) => sum + calcularTotalCotizacion(c), 0)
   const valorCotizacionesPendientes = cotizaciones
     .filter((c) => c.estado === "ENVIADA" || c.estado === "BORRADOR")
-    .reduce((sum, c) => sum + (c.total || 0), 0)
+    .reduce((sum, c) => sum + calcularTotalCotizacion(c), 0)
   const tasaConversion =
     totalCotizaciones > 0 ? ((cotizacionesAceptadas / totalCotizaciones) * 100).toFixed(1) : "0"
   
@@ -203,7 +269,7 @@ export default function CotizacionesFerreteriaPage() {
     )
   }, [cotizaciones])
   
-  const valorMesActual = cotizacionesMesActual.reduce((sum, c) => sum + (c.total || 0), 0)
+  const valorMesActual = cotizacionesMesActual.reduce((sum, c) => sum + calcularTotalCotizacion(c), 0)
 
   const getStatusVariant = (status: string) => {
     switch (status) {
@@ -240,15 +306,15 @@ export default function CotizacionesFerreteriaPage() {
             variant="outline"
             onClick={() => {
               // Función para exportar a CSV
-              const headers = ["Código", "Fecha", "Cliente", "Total", "Estado", "Items"]
-              const rows = filteredCotizaciones.map((cotizacion) => [
-                cotizacion.codigo,
-                cotizacion.fecha,
-                cotizacion.cliente,
-                cotizacion.total.toFixed(2),
-                cotizacion.estado,
-                cotizacion.items.length.toString(),
-              ])
+                              const headers = ["Código", "Fecha", "Cliente", "Total", "Estado", "Items"]
+                              const rows = cotizaciones.map((cotizacion) => [
+                                cotizacion.numero_cotizacion,
+                                formatDate(cotizacion.fecha_cotizacion),
+                                cotizacion.cliente_nombre,
+                                calcularTotalCotizacion(cotizacion).toFixed(2),
+                                cotizacion.estado_display || cotizacion.estado,
+                                (cotizacion.detalles?.length || 0).toString(),
+                              ])
               const csv = [headers, ...rows].map((row) => row.join(",")).join("\n")
               const blob = new Blob([csv], { type: "text/csv" })
               const url = window.URL.createObjectURL(blob)
@@ -549,7 +615,7 @@ export default function CotizacionesFerreteriaPage() {
                         <Badge variant="outline">{cotizacion.detalles?.length || 0} producto{(cotizacion.detalles?.length || 0) !== 1 ? "s" : ""}</Badge>
                       </TableCell>
                       <TableCell className="font-medium">
-                        Q{(cotizacion.total || 0).toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        Q{calcularTotalCotizacion(cotizacion).toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell>
                         <Badge variant={getStatusVariant(cotizacion.estado)}>{cotizacion.estado_display || cotizacion.estado}</Badge>
@@ -570,6 +636,40 @@ export default function CotizacionesFerreteriaPage() {
                               </Button>
                             </Link>
                           )}
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                disabled={deletingId === cotizacion.id}
+                              >
+                                {deletingId === cotizacion.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4 text-red-500" />
+                                )}
+                                <span className="sr-only">Eliminar</span>
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>¿Eliminar cotización?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  ¿Estás seguro de que deseas eliminar la cotización <strong>{cotizacion.numero_cotizacion}</strong>? 
+                                  Esta acción no se puede deshacer.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteCotizacion(cotizacion.id)}
+                                  className="bg-red-500 hover:bg-red-600"
+                                >
+                                  Eliminar
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </TableCell>
                     </TableRow>

@@ -5,9 +5,11 @@ const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
+    
     const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
     const token = extractTokenFromHeader(authHeader)
 
@@ -20,7 +22,7 @@ export async function POST(
       return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
     }
 
-    const response = await fetch(`${DJANGO_API_URL}/api/facturacion/cotizaciones/${params.id}/convertir_a_factura/`, {
+    const response = await fetch(`${DJANGO_API_URL}/api/facturacion/cotizaciones/${id}/convertir_a_factura/`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -46,4 +48,3 @@ export async function POST(
     )
   }
 }
-

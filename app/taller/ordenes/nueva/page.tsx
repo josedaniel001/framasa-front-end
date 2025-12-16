@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -10,48 +9,53 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { Badge } from "@/components/ui/badge"
 import {
   ArrowLeft,
   Save,
   Calendar,
   Wrench,
-  Package,
   Plus,
   X,
   ShoppingCart,
   Info,
+  Loader2,
+  Sparkles,
+  Package,
   ChevronsUpDown,
   Check,
 } from "lucide-react"
+import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { API_ENDPOINTS } from "@/lib/api-config"
-import { apiGet } from "@/lib/api-client"
-import { cn } from "@/lib/utils"
+import { apiGet, apiPost } from "@/lib/api-client"
+import { toast } from "sonner"
+import { sugerirCodigoOrdenTrabajo, TipoMantenimiento } from "@/lib/codigo-generator"
 
-const equipos = [
-  "Excavadora CAT 320D",
-  "Camión Volvo FH16",
-  "Retroexcavadora JCB 3CX",
-  "Grúa Liebherr LTM 1050",
-  "Compactadora Dynapac CA250",
-  "Bulldozer CAT D6T",
-  "Motoniveladora CAT 140M",
-  "Cargador Frontal CAT 950M",
-]
+interface Maquinaria {
+  id: string
+  codigo: string
+  nombre: string
+  empresa: string
+  empresaDisplay: string
+}
 
-const tecnicos = [
-  "Carlos Méndez",
-  "Miguel Torres",
-  "Ana Rodríguez",
-  "Luis Vargas",
-  "Pedro Jiménez",
-  "Roberto Silva",
-  "Antonio López",
-  "María González",
-]
+interface Empleado {
+  id: string
+  codigo: string
+  nombres: string
+  apellidos: string
+  nombreCompleto: string
+  puesto: string
+}
+
+interface RepuestoExterno {
+  id: string
+  nombre: string
+  cantidad: number
+}
 
 interface ProductoFerreteria {
   id: string
@@ -76,104 +80,234 @@ interface MaterialSeleccionado {
   stockActual: number
 }
 
-interface RepuestoExterno {
-  id: string
-  nombre: string
-}
-
 export default function NuevaOrdenPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingData, setIsLoadingData] = useState(true)
+  
+  // Datos para selects
+  const [maquinarias, setMaquinarias] = useState<Maquinaria[]>([])
+  const [empleados, setEmpleados] = useState<Empleado[]>([])
+  const [ordenesExistentes, setOrdenesExistentes] = useState<Array<{ codigo_orden?: string; codigoOrden?: string }>>([])
+  
+  // Código de orden
+  const [codigoOrden, setCodigoOrden] = useState("")
+  
+  // Form data
   const [formData, setFormData] = useState({
-    equipo: "",
-    tipo: "",
-    descripcion: "",
-    prioridad: "",
+    maquinaria: "",
     tecnico: "",
-    fechaInicio: "",
-    fechaEstimadaTerminacion: "",
+    tipo_mantenimiento: "",
+    descripcion_trabajo: "",
+    prioridad: "",
     observaciones: "",
+    fecha_creacion_orden: new Date().toISOString().split("T")[0],
+    fecha_inicio: "",
+    fecha_estimada_terminacion: "",
+    costo_estimado: "0",
   })
 
-  // Estados para productos y materiales
+  // Repuestos externos
+  const [repuestosExternos, setRepuestosExternos] = useState<RepuestoExterno[]>([])
+  const [nuevoRepuestoNombre, setNuevoRepuestoNombre] = useState("")
+  const [nuevoRepuestoCantidad, setNuevoRepuestoCantidad] = useState<number>(1)
+
+  // Productos de ferretería (materiales)
   const [productos, setProductos] = useState<ProductoFerreteria[]>([])
   const [productosLoading, setProductosLoading] = useState(false)
   const [materialesSeleccionados, setMaterialesSeleccionados] = useState<MaterialSeleccionado[]>([])
-  const [repuestosExternos, setRepuestosExternos] = useState<RepuestoExterno[]>([])
-  
-  // Estados para el combobox de productos
   const [productoOpen, setProductoOpen] = useState(false)
   const [productoSearch, setProductoSearch] = useState("")
-  
-  // Estado para el formulario de repuestos externos
-  const [nuevoRepuestoNombre, setNuevoRepuestoNombre] = useState("")
 
-  // Cargar productos desde la API
+  // Cargar maquinarias, empleados y órdenes existentes
   useEffect(() => {
-    const loadProductos = async () => {
+    const loadData = async () => {
       try {
-        setProductosLoading(true)
-        const params = new URLSearchParams()
-        params.append("estado", "activo")
-        params.append("page_size", "100") // Cargar más productos para búsqueda
+        setIsLoadingData(true)
         
-        const productosData = await apiGet<any>(`${API_ENDPOINTS.FERRETERIA.PRODUCTOS}?${params.toString()}`)
+        // Cargar maquinarias
+        const maquinariasData = await apiGet<Maquinaria[]>(`${API_ENDPOINTS.TALLER.MAQUINARIA}?activo=activo`)
+        setMaquinarias(Array.isArray(maquinariasData) ? maquinariasData : [])
         
-        // Manejar respuesta paginada o directa
-        const productosList = Array.isArray(productosData)
-          ? productosData
-          : productosData?.results || productosData?.data || []
-        
-        // Mapear datos del backend al formato del frontend
-        const productosMapeados: ProductoFerreteria[] = productosList.map((p: any) => ({
-          id: String(p.id || p.pk || ""),
-          codigo: p.codigo || "",
-          nombre: p.nombre || "",
-          descripcion: p.descripcion || "",
-          categoria: p.categoria || p.categoria_nombre || "",
-          precioVenta: p.precio_venta || p.precioVenta || 0,
-          costoUnitario: p.costo_unitario || p.costoUnitario || 0,
-          unidadMedida: p.unidad_medida || p.unidad_medida_nombre || "",
-          stockActual: p.stock_actual || p.stockActual || 0,
-          stockMinimo: p.stock_minimo || p.stockMinimo || 0,
-          activo: p.activo !== undefined ? p.activo : true,
+        // Cargar empleados (técnicos)
+        const empleadosData = await apiGet<any[]>(`${API_ENDPOINTS.PLANILLAS.EMPLEADOS}?activo=activo`)
+        const empleadosMapeados = (Array.isArray(empleadosData) ? empleadosData : []).map((e: any) => ({
+          id: String(e.id),
+          codigo: e.codigo_empleado || e.codigo || "",
+          nombres: e.nombres || "",
+          apellidos: e.apellidos || "",
+          nombreCompleto: e.nombre_completo || e.nombreCompleto || `${e.nombres || ""} ${e.apellidos || ""}`.trim(),
+          puesto: e.puesto || e.cargo || "",
         }))
+        setEmpleados(empleadosMapeados)
         
-        setProductos(productosMapeados.filter((p) => p.activo))
-      } catch (error) {
-        console.error("Error al cargar productos:", error)
+        // Cargar órdenes existentes para generar códigos únicos
+        try {
+          const ordenesData = await apiGet<any[]>(`${API_ENDPOINTS.TALLER.ORDENES}`)
+          const ordenesList = Array.isArray(ordenesData) ? ordenesData : []
+          setOrdenesExistentes(ordenesList.map((o: any) => ({
+            codigo_orden: o.codigo_orden || o.codigoOrden || "",
+            codigoOrden: o.codigoOrden || o.codigo_orden || "",
+          })))
+        } catch {
+          // Si falla, continuar sin órdenes existentes
+          setOrdenesExistentes([])
+        }
+
+        // Cargar productos de ferretería
+        try {
+          setProductosLoading(true)
+          const params = new URLSearchParams()
+          params.append("estado", "activo")
+          params.append("page_size", "500")
+          
+          const productosData = await apiGet<any>(`${API_ENDPOINTS.FERRETERIA.PRODUCTOS}?${params.toString()}`)
+          
+          const productosList = Array.isArray(productosData)
+            ? productosData
+            : productosData?.results || productosData?.data || []
+          
+          const productosMapeados: ProductoFerreteria[] = productosList.map((p: any) => ({
+            id: String(p.id || p.pk || ""),
+            codigo: p.codigo || "",
+            nombre: p.nombre || "",
+            descripcion: p.descripcion || "",
+            categoria: p.categoria || p.categoria_nombre || "",
+            precioVenta: p.precio_venta || p.precioVenta || 0,
+            costoUnitario: p.costo_unitario || p.costoUnitario || 0,
+            unidadMedida: p.unidad_medida || p.unidad_medida_nombre || "",
+            stockActual: p.stock_actual || p.stockActual || 0,
+            stockMinimo: p.stock_minimo || p.stockMinimo || 0,
+            activo: p.activo !== undefined ? p.activo : true,
+          }))
+          
+          setProductos(productosMapeados.filter((p) => p.activo))
+        } catch (err) {
+          console.error("Error al cargar productos:", err)
+        } finally {
+          setProductosLoading(false)
+        }
+      } catch (error: any) {
+        console.error("Error al cargar datos:", error)
+        toast.error("Error al cargar datos iniciales")
       } finally {
-        setProductosLoading(false)
+        setIsLoadingData(false)
       }
     }
 
-    loadProductos()
+    loadData()
   }, [])
+
+  // Función para generar código automático
+  const generarCodigoAutomatico = () => {
+    if (!formData.tipo_mantenimiento || !formData.maquinaria) {
+      toast.error("Selecciona el tipo de mantenimiento y la maquinaria para generar el código")
+      return
+    }
+
+    const maquinariaSeleccionada = maquinarias.find((m) => m.id === formData.maquinaria)
+    if (!maquinariaSeleccionada) {
+      toast.error("Maquinaria no encontrada")
+      return
+    }
+
+    const codigo = sugerirCodigoOrdenTrabajo(
+      formData.tipo_mantenimiento as TipoMantenimiento,
+      maquinariaSeleccionada.nombre,
+      ordenesExistentes
+    )
+
+    setCodigoOrden(codigo)
+    toast.success(`Código generado: ${codigo}`)
+  }
+
+  // Autogenerar código cuando cambien tipo y maquinaria (solo si está vacío)
+  useEffect(() => {
+    if (formData.tipo_mantenimiento && formData.maquinaria && !codigoOrden) {
+      const maquinariaSeleccionada = maquinarias.find((m) => m.id === formData.maquinaria)
+      if (maquinariaSeleccionada) {
+        const codigo = sugerirCodigoOrdenTrabajo(
+          formData.tipo_mantenimiento as TipoMantenimiento,
+          maquinariaSeleccionada.nombre,
+          ordenesExistentes
+        )
+        setCodigoOrden(codigo)
+      }
+    }
+  }, [formData.tipo_mantenimiento, formData.maquinaria, maquinarias, ordenesExistentes])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoading(true)
-
-    // Preparar datos para enviar
-    const datosOrden = {
-      ...formData,
-      materiales: materialesSeleccionados.map((m) => ({
-        productoId: m.productoId,
-        cantidad: m.cantidad,
-      })),
-      repuestosExternos: repuestosExternos,
+    
+    // Validaciones
+    if (!codigoOrden) {
+      toast.error("Ingrese o genere un código de orden")
+      return
+    }
+    if (!formData.maquinaria) {
+      toast.error("Seleccione una maquinaria")
+      return
+    }
+    if (!formData.tecnico) {
+      toast.error("Seleccione un técnico")
+      return
+    }
+    if (!formData.tipo_mantenimiento) {
+      toast.error("Seleccione el tipo de mantenimiento")
+      return
+    }
+    if (!formData.descripcion_trabajo) {
+      toast.error("Ingrese la descripción del trabajo")
+      return
+    }
+    if (!formData.prioridad) {
+      toast.error("Seleccione la prioridad")
+      return
+    }
+    if (!formData.fecha_inicio) {
+      toast.error("Seleccione la fecha de inicio")
+      return
+    }
+    if (!formData.fecha_estimada_terminacion) {
+      toast.error("Seleccione la fecha estimada de terminación")
+      return
     }
 
-    console.log("Datos de la orden:", datosOrden)
+    try {
+      setIsLoading(true)
 
-    // TODO: Aquí se debe hacer la llamada a la API para crear la orden
-    // await apiPost(API_ENDPOINTS.TALLER.ORDENES, datosOrden)
+      const datosOrden = {
+        codigo_orden: codigoOrden,
+        maquinaria: parseInt(formData.maquinaria),
+        tecnico: parseInt(formData.tecnico),
+        tipo_mantenimiento: formData.tipo_mantenimiento,
+        descripcion_trabajo: formData.descripcion_trabajo,
+        prioridad: formData.prioridad,
+        observaciones: formData.observaciones || null,
+        fecha_creacion_orden: formData.fecha_creacion_orden,
+        fecha_inicio: formData.fecha_inicio,
+        fecha_estimada_terminacion: formData.fecha_estimada_terminacion,
+        costo_estimado: parseFloat(formData.costo_estimado) || 0,
+        repuestos_externos: repuestosExternos.map((r) => ({ nombre: r.nombre, cantidad: r.cantidad })),
+        // Materiales de ferretería seleccionados
+        materiales: materialesSeleccionados.map((m) => ({
+          producto_id: parseInt(m.productoId),
+          cantidad: m.cantidad,
+        })),
+        estado: "PENDIENTE",
+        progreso: 0,
+        activo: true,
+      }
 
-    // Simular guardado
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-
-    setIsLoading(false)
-    router.push("/taller/ordenes")
+      await apiPost(API_ENDPOINTS.TALLER.ORDENES, datosOrden)
+      toast.success("Orden de trabajo creada exitosamente")
+      router.push("/taller/ordenes")
+    } catch (error: any) {
+      console.error("Error al crear orden:", error)
+      toast.error(error.message || "Error al crear la orden de trabajo")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleInputChange = (field: string, value: string) => {
@@ -181,6 +315,33 @@ export default function NuevaOrdenPage() {
       ...prev,
       [field]: value,
     }))
+  }
+
+  // Agregar repuesto externo
+  const handleAgregarRepuestoExterno = () => {
+    if (!nuevoRepuestoNombre.trim()) return
+
+    const nuevo: RepuestoExterno = {
+      id: Date.now().toString(),
+      nombre: nuevoRepuestoNombre.trim(),
+      cantidad: nuevoRepuestoCantidad || 1,
+    }
+
+    setRepuestosExternos([...repuestosExternos, nuevo])
+    setNuevoRepuestoNombre("")
+    setNuevoRepuestoCantidad(1)
+  }
+
+  // Actualizar cantidad de repuesto externo
+  const handleActualizarCantidadRepuesto = (id: string, cantidad: number) => {
+    setRepuestosExternos((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, cantidad: Math.max(0, cantidad) } : r))
+    )
+  }
+
+  // Eliminar repuesto externo
+  const handleEliminarRepuestoExterno = (id: string) => {
+    setRepuestosExternos((prev) => prev.filter((r) => r.id !== id))
   }
 
   // Filtrar productos para el combobox
@@ -226,24 +387,13 @@ export default function NuevaOrdenPage() {
     setMaterialesSeleccionados((prev) => prev.filter((m) => m.productoId !== productoId))
   }
 
-  // Agregar repuesto externo
-  const handleAgregarRepuestoExterno = () => {
-    if (!nuevoRepuestoNombre.trim()) {
-      return
-    }
-
-    const nuevo: RepuestoExterno = {
-      id: Date.now().toString(),
-      nombre: nuevoRepuestoNombre.trim(),
-    }
-
-    setRepuestosExternos([...repuestosExternos, nuevo])
-    setNuevoRepuestoNombre("")
-  }
-
-  // Eliminar repuesto externo
-  const handleEliminarRepuestoExterno = (id: string) => {
-    setRepuestosExternos((prev) => prev.filter((r) => r.id !== id))
+  if (isLoadingData) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-muted-foreground">Cargando datos...</span>
+      </div>
+    )
   }
 
   return (
@@ -275,17 +425,53 @@ export default function NuevaOrdenPage() {
                 <CardDescription>Datos básicos de la orden de trabajo</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Código de Orden */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="codigo_orden">Código de Orden *</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={generarCodigoAutomatico}
+                      disabled={!formData.tipo_mantenimiento || !formData.maquinaria || isLoadingData}
+                      className="h-7 text-xs"
+                    >
+                      <Sparkles className="mr-1 h-3 w-3" />
+                      Generar automático
+                    </Button>
+                  </div>
+                  <Input
+                    id="codigo_orden"
+                    value={codigoOrden}
+                    onChange={(e) => setCodigoOrden(e.target.value.toUpperCase())}
+                    placeholder="Ej: OT-PRE-EXC-001 (se genera automáticamente)"
+                    className="font-mono"
+                  />
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p>Formato: <span className="font-mono">OT-[TIPO]-[MAQ]-[NÚM]</span></p>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      <Badge variant="outline" className="text-xs font-normal">OT = Orden Trabajo</Badge>
+                      <Badge variant="outline" className="text-xs font-normal">PRE/COR/EME/LEG = Tipo</Badge>
+                      <Badge variant="outline" className="text-xs font-normal">3 letras = Maquinaria</Badge>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="equipo">Equipo *</Label>
-                    <Select value={formData.equipo} onValueChange={(value) => handleInputChange("equipo", value)}>
+                    <Label htmlFor="maquinaria">Maquinaria / Equipo *</Label>
+                    <Select
+                      value={formData.maquinaria}
+                      onValueChange={(value) => handleInputChange("maquinaria", value)}
+                    >
                       <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar equipo" />
+                        <SelectValue placeholder="Seleccionar maquinaria" />
                       </SelectTrigger>
                       <SelectContent>
-                        {equipos.map((equipo) => (
-                          <SelectItem key={equipo} value={equipo}>
-                            {equipo}
+                        {maquinarias.map((maq) => (
+                          <SelectItem key={maq.id} value={maq.id}>
+                            {maq.codigo} - {maq.nombre} ({maq.empresaDisplay || maq.empresa})
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -293,28 +479,31 @@ export default function NuevaOrdenPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="tipo">Tipo de Mantenimiento *</Label>
-                    <Select value={formData.tipo} onValueChange={(value) => handleInputChange("tipo", value)}>
+                    <Label htmlFor="tipo_mantenimiento">Tipo de Mantenimiento *</Label>
+                    <Select
+                      value={formData.tipo_mantenimiento}
+                      onValueChange={(value) => handleInputChange("tipo_mantenimiento", value)}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar tipo" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Preventivo">Preventivo</SelectItem>
-                        <SelectItem value="Correctivo">Correctivo</SelectItem>
-                        <SelectItem value="Emergencia">Emergencia</SelectItem>
-                        <SelectItem value="Legal">Legal / Inspección</SelectItem>
+                        <SelectItem value="PREVENTIVO">Preventivo</SelectItem>
+                        <SelectItem value="CORRECTIVO">Correctivo</SelectItem>
+                        <SelectItem value="EMERGENCIA">Emergencia</SelectItem>
+                        <SelectItem value="LEGAL_INSPECCION">Legal / Inspección</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="descripcion">Descripción del Trabajo *</Label>
+                  <Label htmlFor="descripcion_trabajo">Descripción del Trabajo *</Label>
                   <Textarea
-                    id="descripcion"
+                    id="descripcion_trabajo"
                     placeholder="Describe detalladamente el trabajo a realizar..."
-                    value={formData.descripcion}
-                    onChange={(e) => handleInputChange("descripcion", e.target.value)}
+                    value={formData.descripcion_trabajo}
+                    onChange={(e) => handleInputChange("descripcion_trabajo", e.target.value)}
                     rows={3}
                   />
                 </div>
@@ -322,34 +511,53 @@ export default function NuevaOrdenPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="prioridad">Prioridad *</Label>
-                    <Select value={formData.prioridad} onValueChange={(value) => handleInputChange("prioridad", value)}>
+                    <Select
+                      value={formData.prioridad}
+                      onValueChange={(value) => handleInputChange("prioridad", value)}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar prioridad" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Baja">Baja</SelectItem>
-                        <SelectItem value="Media">Media</SelectItem>
-                        <SelectItem value="Alta">Alta</SelectItem>
-                        <SelectItem value="Crítica">Crítica</SelectItem>
+                        <SelectItem value="BAJA">Baja</SelectItem>
+                        <SelectItem value="MEDIA">Media</SelectItem>
+                        <SelectItem value="ALTA">Alta</SelectItem>
+                        <SelectItem value="URGENTE">Urgente</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="tecnico">Técnico Asignado *</Label>
-                    <Select value={formData.tecnico} onValueChange={(value) => handleInputChange("tecnico", value)}>
+                    <Select
+                      value={formData.tecnico}
+                      onValueChange={(value) => handleInputChange("tecnico", value)}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar técnico" />
                       </SelectTrigger>
                       <SelectContent>
-                        {tecnicos.map((tecnico) => (
-                          <SelectItem key={tecnico} value={tecnico}>
-                            {tecnico}
+                        {empleados.map((emp) => (
+                          <SelectItem key={emp.id} value={emp.id}>
+                            {emp.nombreCompleto} - {emp.puesto}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="costo_estimado">Costo Estimado (Q)</Label>
+                  <Input
+                    id="costo_estimado"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={formData.costo_estimado}
+                    onChange={(e) => handleInputChange("costo_estimado", e.target.value)}
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -365,14 +573,16 @@ export default function NuevaOrdenPage() {
               </CardContent>
             </Card>
 
-            {/* Materiales y Productos */}
+            {/* Materiales y Productos de Ferretería */}
             <Card className="mt-6">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Package className="h-5 w-5" />
-                  Materiales y Productos
+                  Materiales y Productos de Ferretería
                 </CardTitle>
-                <CardDescription>Selecciona los materiales que se utilizarán en el trabajo</CardDescription>
+                <CardDescription>
+                  Selecciona los materiales del inventario de ferretería que se utilizarán en el trabajo
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Selector de productos con buscador */}
@@ -402,7 +612,7 @@ export default function NuevaOrdenPage() {
                             {productosLoading ? "Cargando productos..." : "No se encontraron productos."}
                           </CommandEmpty>
                           <CommandGroup>
-                            {productosFiltrados.map((producto) => (
+                            {productosFiltrados.slice(0, 20).map((producto) => (
                               <CommandItem
                                 key={producto.id}
                                 value={`${producto.nombre} ${producto.codigo} ${producto.categoria}`}
@@ -468,6 +678,7 @@ export default function NuevaOrdenPage() {
                             />
                             <span className="text-xs text-muted-foreground">{material.unidadMedida}</span>
                             <Button
+                              type="button"
                               variant="ghost"
                               size="sm"
                               onClick={() => handleEliminarMaterial(material.productoId)}
@@ -481,6 +692,12 @@ export default function NuevaOrdenPage() {
                     </div>
                   </div>
                 )}
+
+                {materialesSeleccionados.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No hay materiales seleccionados. Usa el buscador para agregar productos del inventario.
+                  </p>
+                )}
               </CardContent>
             </Card>
 
@@ -492,13 +709,13 @@ export default function NuevaOrdenPage() {
                   Repuestos Externos
                 </CardTitle>
                 <CardDescription>
-                  Lista de materiales y repuestos externos que se necesitarán conseguir
+                  Lista de materiales y repuestos externos que se necesitarán conseguir (no están en inventario)
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex gap-2">
                   <Input
-                    placeholder="Ej: Bujía NGK BKR6E-11, Filtro de aceite, Mangueras hidráulicas..."
+                    placeholder="Ej: Bujía NGK BKR6E-11, Filtro de aceite..."
                     value={nuevoRepuestoNombre}
                     onChange={(e) => setNuevoRepuestoNombre(e.target.value)}
                     onKeyDown={(e) => {
@@ -509,6 +726,15 @@ export default function NuevaOrdenPage() {
                     }}
                     className="flex-1"
                   />
+                  <Input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="Cant."
+                    value={nuevoRepuestoCantidad}
+                    onChange={(e) => setNuevoRepuestoCantidad(parseFloat(e.target.value) || 1)}
+                    className="w-20"
+                  />
                   <Button
                     type="button"
                     onClick={handleAgregarRepuestoExterno}
@@ -518,7 +744,6 @@ export default function NuevaOrdenPage() {
                   </Button>
                 </div>
 
-                {/* Lista de repuestos externos agregados */}
                 {repuestosExternos.length > 0 && (
                   <div className="space-y-2">
                     <Label>Repuestos y Materiales Agregados</Label>
@@ -526,17 +751,33 @@ export default function NuevaOrdenPage() {
                       {repuestosExternos.map((repuesto) => (
                         <div
                           key={repuesto.id}
-                          className="flex items-center justify-between gap-2 p-3 border rounded-lg bg-background"
+                          className="flex items-center gap-2 p-3 border rounded-lg bg-background"
                         >
-                          <div className="font-medium">{repuesto.nombre}</div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEliminarRepuestoExterno(repuesto.id)}
-                            className="text-destructive"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
+                          <div className="flex-1">
+                            <div className="font-medium">{repuesto.nombre}</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs whitespace-nowrap">Cantidad:</Label>
+                            <Input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              value={repuesto.cantidad}
+                              onChange={(e) =>
+                                handleActualizarCantidadRepuesto(repuesto.id, parseFloat(e.target.value) || 0)
+                              }
+                              className="w-20"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEliminarRepuestoExterno(repuesto.id)}
+                              className="text-destructive"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -558,23 +799,23 @@ export default function NuevaOrdenPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="fechaInicio">Fecha de Inicio *</Label>
+                  <Label htmlFor="fecha_inicio">Fecha de Inicio *</Label>
                   <Input
-                    id="fechaInicio"
+                    id="fecha_inicio"
                     type="date"
-                    value={formData.fechaInicio}
-                    onChange={(e) => handleInputChange("fechaInicio", e.target.value)}
+                    value={formData.fecha_inicio}
+                    onChange={(e) => handleInputChange("fecha_inicio", e.target.value)}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="fechaEstimadaTerminacion">Fecha Estimada de Terminación *</Label>
+                  <Label htmlFor="fecha_estimada_terminacion">Fecha Estimada de Terminación *</Label>
                   <Input
-                    id="fechaEstimadaTerminacion"
+                    id="fecha_estimada_terminacion"
                     type="date"
-                    value={formData.fechaEstimadaTerminacion}
-                    onChange={(e) => handleInputChange("fechaEstimadaTerminacion", e.target.value)}
-                    min={formData.fechaInicio}
+                    value={formData.fecha_estimada_terminacion}
+                    onChange={(e) => handleInputChange("fecha_estimada_terminacion", e.target.value)}
+                    min={formData.fecha_inicio}
                   />
                 </div>
 
@@ -582,17 +823,19 @@ export default function NuevaOrdenPage() {
                 <div className="pt-4 border-t">
                   <h4 className="font-medium mb-2">Resumen</h4>
                   <div className="space-y-2 text-sm">
+                    {codigoOrden && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Código:</span>
+                        <span className="font-mono font-medium text-primary">{codigoOrden}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Estado:</span>
-                      <span className="font-medium">Pendiente</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Creado por:</span>
-                      <span className="font-medium">Usuario Actual</span>
+                      <Badge variant="secondary">Pendiente</Badge>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Fecha creación:</span>
-                      <span className="font-medium">{new Date().toLocaleDateString()}</span>
+                      <span className="font-medium">{new Date().toLocaleDateString("es-GT")}</span>
                     </div>
                   </div>
                 </div>
@@ -606,102 +849,23 @@ export default function NuevaOrdenPage() {
                   <Info className="h-5 w-5" />
                   Tipos de Mantenimiento
                 </CardTitle>
-                <CardDescription>Información sobre los tipos de mantenimiento disponibles</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-4">
-                  {/* Mantenimiento Preventivo */}
-                  <div className="p-3 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
-                    <div className="font-semibold text-sm mb-2 text-blue-900 dark:text-blue-100">
-                      1. Mantenimiento Preventivo
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Programado por kilómetros, horas de uso o fechas.
-                    </p>
-                    <div className="text-xs text-muted-foreground space-y-1">
-                      <div className="font-medium">Incluye:</div>
-                      <ul className="list-disc list-inside space-y-0.5 ml-2">
-                        <li>Cambio de aceite</li>
-                        <li>Filtros</li>
-                        <li>Revisión de frenos</li>
-                        <li>Engrase</li>
-                        <li>Revisión general</li>
-                      </ul>
-                    </div>
-                    <div className="mt-2 text-xs text-blue-700 dark:text-blue-300">
-                      ➡️ Mantiene operativos camiones, maquinaria y herramientas.
-                    </div>
-                  </div>
-
-                  {/* Mantenimiento Correctivo */}
-                  <div className="p-3 border rounded-lg bg-orange-50 dark:bg-orange-950/20">
-                    <div className="font-semibold text-sm mb-2 text-orange-900 dark:text-orange-100">
-                      2. Mantenimiento Correctivo
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Por fallas o daños inesperados.
-                    </p>
-                    <div className="text-xs text-muted-foreground space-y-1">
-                      <div className="font-medium">Incluye:</div>
-                      <ul className="list-disc list-inside space-y-0.5 ml-2">
-                        <li>Reparaciones mecánicas</li>
-                        <li>Soldaduras</li>
-                        <li>Cambios de piezas</li>
-                        <li>Reparaciones eléctricas</li>
-                        <li>Problemas con llantas o sistemas hidráulicos</li>
-                      </ul>
-                    </div>
-                    <div className="mt-2 text-xs text-orange-700 dark:text-orange-300">
-                      ➡️ Es lo que más pasa en maquinaria pesada y camiones de piedrín.
-                    </div>
-                  </div>
-
-                  {/* Mantenimiento de Emergencia */}
-                  <div className="p-3 border rounded-lg bg-red-50 dark:bg-red-950/20">
-                    <div className="font-semibold text-sm mb-2 text-red-900 dark:text-red-100">
-                      3. Mantenimiento de Emergencia / Urgente
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Cuando la unidad se queda tirada en obra o carretera.
-                    </p>
-                    <div className="text-xs text-muted-foreground space-y-1">
-                      <div className="font-medium">Incluye:</div>
-                      <ul className="list-disc list-inside space-y-0.5 ml-2">
-                        <li>Estallido de llanta</li>
-                        <li>Sobrecalentamiento</li>
-                        <li>Fugas graves</li>
-                        <li>Motor no enciende</li>
-                        <li>Fallas hidráulicas en maquinaria en uso</li>
-                      </ul>
-                    </div>
-                    <div className="mt-2 text-xs text-red-700 dark:text-red-300">
-                      ➡️ Aquí sí se prioriza porque detiene operaciones.
-                    </div>
-                  </div>
-
-                  {/* Mantenimiento Legal */}
-                  <div className="p-3 border rounded-lg bg-purple-50 dark:bg-purple-950/20">
-                    <div className="font-semibold text-sm mb-2 text-purple-900 dark:text-purple-100">
-                      4. Mantenimiento Legal / Inspección
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Obligatorio por ley o seguridad industrial.
-                    </p>
-                    <div className="text-xs text-muted-foreground space-y-1">
-                      <div className="font-medium">Incluye:</div>
-                      <ul className="list-disc list-inside space-y-0.5 ml-2">
-                        <li>Revisión de frenos</li>
-                        <li>Emisiones</li>
-                        <li>Certificado de maquinaria pesada</li>
-                        <li>Revisiones municipales</li>
-                        <li>Inspecciones de seguridad en planta</li>
-                        <li>Verificación de montacargas</li>
-                      </ul>
-                    </div>
-                    <div className="mt-2 text-xs text-purple-700 dark:text-purple-300">
-                      ➡️ Necesario para evitar multas y permisos.
-                    </div>
-                  </div>
+              <CardContent className="space-y-3">
+                <div className="p-2 border rounded bg-blue-50 dark:bg-blue-950/20">
+                  <span className="font-semibold text-xs text-blue-900 dark:text-blue-100">Preventivo:</span>
+                  <p className="text-xs text-muted-foreground">Cambio de aceite, filtros, revisión general.</p>
+                </div>
+                <div className="p-2 border rounded bg-orange-50 dark:bg-orange-950/20">
+                  <span className="font-semibold text-xs text-orange-900 dark:text-orange-100">Correctivo:</span>
+                  <p className="text-xs text-muted-foreground">Reparaciones mecánicas, soldaduras, cambio de piezas.</p>
+                </div>
+                <div className="p-2 border rounded bg-red-50 dark:bg-red-950/20">
+                  <span className="font-semibold text-xs text-red-900 dark:text-red-100">Emergencia:</span>
+                  <p className="text-xs text-muted-foreground">Fallas urgentes que detienen operaciones.</p>
+                </div>
+                <div className="p-2 border rounded bg-purple-50 dark:bg-purple-950/20">
+                  <span className="font-semibold text-xs text-purple-900 dark:text-purple-100">Legal:</span>
+                  <p className="text-xs text-muted-foreground">Inspecciones obligatorias por ley.</p>
                 </div>
               </CardContent>
             </Card>
@@ -718,7 +882,7 @@ export default function NuevaOrdenPage() {
           <Button type="submit" disabled={isLoading}>
             {isLoading ? (
               <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Guardando...
               </>
             ) : (

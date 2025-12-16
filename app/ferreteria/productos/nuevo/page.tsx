@@ -41,6 +41,7 @@ export default function NuevoProductoPage() {
   const [descripcion, setDescripcion] = useState<string>("")
   const [categoriaId, setCategoriaId] = useState<string>("")
   const [precioVenta, setPrecioVenta] = useState<number>(0)
+  const [precioDescuento, setPrecioDescuento] = useState<number | null>(null)
   const [costoUnitario, setCostoUnitario] = useState<number>(0)
   const [unidadMedidaId, setUnidadMedidaId] = useState<string>("")
   const [stockActual, setStockActual] = useState<number>(0)
@@ -215,6 +216,7 @@ export default function NuevoProductoPage() {
       categoria_id: Number(categoriaId),
       unidad_medida_id: Number(unidadMedidaId),
       precio_venta: precioVenta,
+      precio_descuento: precioDescuento,
       costo_unitario: costoUnitario,
       stock_actual: stockActual,
       stock_minimo: stockMinimo,
@@ -402,6 +404,21 @@ export default function NuevoProductoPage() {
                   </Button>
                 </div>
               )}
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="precioDescuento">Precio con Descuento (Q)</Label>
+              <Input
+                id="precioDescuento"
+                type="number"
+                value={precioDescuento ?? ""}
+                onChange={(e) => setPrecioDescuento(e.target.value ? Number(e.target.value) : null)}
+                step="0.01"
+                min="0"
+                placeholder="Opcional - Precio con descuento aplicado"
+              />
+              <p className="text-xs text-muted-foreground">
+                Deja vacío si no hay descuento. Este precio se mostrará como oferta.
+              </p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="costoUnitario">Costo Unitario (Q)</Label>

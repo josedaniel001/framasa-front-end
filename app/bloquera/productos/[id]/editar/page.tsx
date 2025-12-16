@@ -36,6 +36,7 @@ export default function EditarProductoBloqueraPage({ params }: EditarProductoBlo
   const [tipoBloque, setTipoBloque] = useState<string>("")
   const [dimensiones, setDimensiones] = useState<string>("")
   const [precioVentaUnitario, setPrecioVentaUnitario] = useState<number>(0)
+  const [precioDescuento, setPrecioDescuento] = useState<number | null>(null)
   const [costoProduccionUnitario, setCostoProduccionUnitario] = useState<number>(0)
   const [stockActual, setStockActual] = useState<number>(0)
   const [stockMinimo, setStockMinimo] = useState<number>(0)
@@ -55,6 +56,7 @@ export default function EditarProductoBloqueraPage({ params }: EditarProductoBlo
         setTipoBloque(data.tipoBloque || data.tipo_bloque || "")
         setDimensiones(data.dimensiones || "")
         setPrecioVentaUnitario(data.precioVentaUnitario || data.precio_unitario || 0)
+        setPrecioDescuento(data.precioDescuento ?? data.precio_descuento ?? null)
         setCostoProduccionUnitario(data.costoProduccionUnitario || data.costo_produccion || 0)
         setStockActual(data.stockActual || data.stock_actual || 0)
         setStockMinimo(data.stockMinimo || data.stock_minimo || 0)
@@ -98,6 +100,7 @@ export default function EditarProductoBloqueraPage({ params }: EditarProductoBlo
         tipoBloque,
         dimensiones: dimensiones || null,
         precioVentaUnitario,
+        precioDescuento,
         costoProduccionUnitario,
         stockActual,
         stockMinimo,
@@ -235,6 +238,22 @@ export default function EditarProductoBloqueraPage({ params }: EditarProductoBlo
                 required
                 disabled={saving}
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="precioDescuento">Precio con Descuento (Q)</Label>
+              <Input
+                id="precioDescuento"
+                type="number"
+                value={precioDescuento ?? ""}
+                onChange={(e) => setPrecioDescuento(e.target.value ? Number(e.target.value) : null)}
+                step="0.01"
+                min="0"
+                placeholder="Opcional - Precio con descuento aplicado"
+                disabled={saving}
+              />
+              <p className="text-xs text-muted-foreground">
+                Deja vacío si no hay descuento. Este precio se mostrará como oferta.
+              </p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="costoProduccionUnitario">Costo de Producción Unitario (Q) *</Label>

@@ -28,6 +28,7 @@ export default function NuevoProductoBloqueraPage() {
   const [tipoBloque, setTipoBloque] = useState<string>("")
   const [dimensiones, setDimensiones] = useState<string>("")
   const [precioVentaUnitario, setPrecioVentaUnitario] = useState<number>(0)
+  const [precioDescuento, setPrecioDescuento] = useState<number | null>(null)
   const [costoProduccionUnitario, setCostoProduccionUnitario] = useState<number>(0)
   const [stockActual, setStockActual] = useState<number>(0)
   const [stockMinimo, setStockMinimo] = useState<number>(0)
@@ -148,6 +149,7 @@ export default function NuevoProductoBloqueraPage() {
         tipoBloque,
         dimensiones: dimensiones || null,
         precioVentaUnitario,
+        precioDescuento,
         costoProduccionUnitario,
         stockActual,
         stockMinimo,
@@ -298,6 +300,22 @@ export default function NuevoProductoBloqueraPage() {
                   </Button>
                 </div>
               )}
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="precioDescuento">Precio con Descuento (Q)</Label>
+              <Input
+                id="precioDescuento"
+                type="number"
+                value={precioDescuento ?? ""}
+                onChange={(e) => setPrecioDescuento(e.target.value ? Number(e.target.value) : null)}
+                step="0.01"
+                min="0"
+                placeholder="Opcional - Precio con descuento aplicado"
+                disabled={loading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Deja vacío si no hay descuento. Este precio se mostrará como oferta.
+              </p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="costoProduccionUnitario">Costo de Producción Unitario (Q) *</Label>

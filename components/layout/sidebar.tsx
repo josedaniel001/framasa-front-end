@@ -88,6 +88,12 @@ const navigationItems = [
     ],
   },
   {
+    title: "Caja",
+    url: "/caja",
+    icon: CreditCard,
+    modulo: ModuloSistema.CAJA,
+  },
+  {
     title: "Reportes",
     url: "/reportes",
     icon: BarChart3,

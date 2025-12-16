@@ -1389,6 +1389,7 @@ export const permisosPorRol: Record<RolSistema, ModuloSistema[]> = {
     ModuloSistema.PIEDRINERA,
     ModuloSistema.TALLER,
     ModuloSistema.PLANILLAS,
+    ModuloSistema.CAJA,
     ModuloSistema.REPORTES,
   ],
   [RolSistema.GERENTE]: [
@@ -1396,6 +1397,7 @@ export const permisosPorRol: Record<RolSistema, ModuloSistema[]> = {
     ModuloSistema.FERRETERIA,
     ModuloSistema.BLOQUERA,
     ModuloSistema.PIEDRINERA,
+    ModuloSistema.CAJA,
     ModuloSistema.REPORTES,
   ],
   [RolSistema.VENDEDOR]: [ModuloSistema.DASHBOARD, ModuloSistema.FERRETERIA],

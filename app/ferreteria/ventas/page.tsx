@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { PlusCircle, Search, DollarSign, Clock, CheckCircle, XCircle, Eye, Edit, Filter, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon, Loader2, RefreshCw } from "lucide-react"
+import { PlusCircle, Search, DollarSign, Clock, CheckCircle, XCircle, Eye, Edit, Filter, X, ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon, Loader2, RefreshCw, Trash2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/pagination"
 import Link from "next/link"
 import { API_ENDPOINTS } from "@/lib/api-config"
-import { apiGet } from "@/lib/api-client"
+import { apiGet, apiPost } from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
 
 const ITEMS_PER_PAGE = 10
@@ -95,6 +95,9 @@ export default function VentasFerreteriaPage() {
           "Cancelada": "ANULADA",
         }
         params.append("estado", estadoMap[filters.estado] || filters.estado)
+      } else {
+        // Por defecto, excluir facturas canceladas
+        params.append("estado_not", "ANULADA")
       }
 
       if (filters.empresa !== "todos") {
@@ -175,6 +178,47 @@ export default function VentasFerreteriaPage() {
     setFilters({ estado: "todos", periodo: "todos", empresa: "todos" })
     setSearchTerm("")
     setCurrentPage(1)
+  }
+
+  // Función para cancelar una factura
+  const cancelarFactura = async (factura: Factura) => {
+    if (factura.estado === "ANULADA") {
+      toast({
+        title: "Factura ya cancelada",
+        description: "Esta factura ya está en estado cancelado",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (factura.total_pagado > 0) {
+      toast({
+        title: "No se puede cancelar",
+        description: "No se puede cancelar una factura que ya tiene pagos registrados",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      await apiPost(API_ENDPOINTS.FACTURACION.FACTURA_ANULAR(factura.id), {})
+
+      toast({
+        title: "Factura cancelada",
+        description: `La factura ${factura.numero_factura} ha sido cancelada exitosamente`,
+      })
+
+      // Recargar datos
+      await loadFacturas()
+      await loadStats()
+    } catch (error: any) {
+      console.error("Error al cancelar factura:", error)
+      toast({
+        title: "Error al cancelar",
+        description: error.message || "No se pudo cancelar la factura",
+        variant: "destructive",
+      })
+    }
   }
 
   const hasActiveFilters = filters.estado !== "todos" || filters.periodo !== "todos" || filters.empresa !== "todos"
@@ -387,8 +431,10 @@ export default function VentasFerreteriaPage() {
                   <Badge variant="secondary" className="gap-1">
                     Estado: {filters.estado}
                     <button
+                      type="button"
                       onClick={() => handleFilterChange("estado", "todos")}
                       className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                      aria-label={`Quitar filtro de estado: ${filters.estado}`}
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -403,8 +449,10 @@ export default function VentasFerreteriaPage() {
                         ? "Última Semana"
                         : "Este Mes"}
                     <button
+                      type="button"
                       onClick={() => handleFilterChange("periodo", "todos")}
                       className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                      aria-label={`Quitar filtro de período: ${filters.periodo === "hoy" ? "Hoy" : filters.periodo === "semana" ? "Última Semana" : "Este Mes"}`}
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -414,8 +462,10 @@ export default function VentasFerreteriaPage() {
                   <Badge variant="secondary" className="gap-1">
                     Empresa: {filters.empresa}
                     <button
+                      type="button"
                       onClick={() => handleFilterChange("empresa", "todos")}
                       className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                      aria-label={`Quitar filtro de empresa: ${filters.empresa}`}
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -491,11 +541,23 @@ export default function VentasFerreteriaPage() {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Link href={`/ferreteria/ventas/${factura.id}`}>
-                            <Button variant="outline" size="sm">
+                            <Button variant="outline" size="sm" aria-label="Ver detalle de factura">
                               <Eye className="h-4 w-4" />
                               <span className="sr-only">Ver</span>
                             </Button>
                           </Link>
+                          {factura.estado !== "ANULADA" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => cancelarFactura(factura)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              aria-label="Cancelar factura"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">Cancelar</span>
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

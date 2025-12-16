@@ -5,9 +5,11 @@ const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
+    
     const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
     const token = extractTokenFromHeader(authHeader)
 
@@ -20,7 +22,7 @@ export async function GET(
       return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
     }
 
-    const response = await fetch(`${DJANGO_API_URL}/api/facturacion/cotizaciones/${params.id}/`, {
+    const response = await fetch(`${DJANGO_API_URL}/api/facturacion/cotizaciones/${id}/`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -49,9 +51,11 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
+    
     const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
     const token = extractTokenFromHeader(authHeader)
 
@@ -66,7 +70,7 @@ export async function PUT(
 
     const body = await request.json()
 
-    const response = await fetch(`${DJANGO_API_URL}/api/facturacion/cotizaciones/${params.id}/`, {
+    const response = await fetch(`${DJANGO_API_URL}/api/facturacion/cotizaciones/${id}/`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -96,9 +100,11 @@ export async function PUT(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
+    
     const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
     const token = extractTokenFromHeader(authHeader)
 
@@ -113,7 +119,7 @@ export async function PATCH(
 
     const body = await request.json()
 
-    const response = await fetch(`${DJANGO_API_URL}/api/facturacion/cotizaciones/${params.id}/`, {
+    const response = await fetch(`${DJANGO_API_URL}/api/facturacion/cotizaciones/${id}/`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -143,9 +149,11 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
+    
     const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
     const token = extractTokenFromHeader(authHeader)
 
@@ -158,7 +166,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
     }
 
-    const response = await fetch(`${DJANGO_API_URL}/api/facturacion/cotizaciones/${params.id}/`, {
+    const response = await fetch(`${DJANGO_API_URL}/api/facturacion/cotizaciones/${id}/`, {
       method: 'DELETE',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -183,4 +191,3 @@ export async function DELETE(
     )
   }
 }
-

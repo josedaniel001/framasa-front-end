@@ -84,6 +84,63 @@ export const API_ENDPOINTS = {
     get EMPLEADOS_STATS() {
       return nextApiEndpoint('/api/planillas/empleados/stats')
     },
+    // Asistencias
+    get ASISTENCIAS() {
+      return nextApiEndpoint('/api/planillas/asistencias')
+    },
+    ASISTENCIA(id: number | string) {
+      return `${nextApiEndpoint('/api/planillas/asistencias')}/${id}`
+    },
+    get ASISTENCIAS_STATS() {
+      return nextApiEndpoint('/api/planillas/asistencias/stats')
+    },
+    ASISTENCIA_TOGGLE_ACTIVO(id: number | string) {
+      return `${nextApiEndpoint('/api/planillas/asistencias')}/${id}/toggle_activo`
+    },
+    ASISTENCIA_MARCAR_SALIDA(id: number | string) {
+      return `${nextApiEndpoint('/api/planillas/asistencias')}/${id}/marcar_salida`
+    },
+    get EMPLEADOS_SIN_ASISTENCIA_HOY() {
+      return nextApiEndpoint('/api/planillas/asistencias/empleados_sin_asistencia_hoy')
+    },
+    // Nóminas
+    get NOMINAS() {
+      return nextApiEndpoint('/api/planillas/nominas')
+    },
+    NOMINA(id: number | string) {
+      return `${nextApiEndpoint('/api/planillas/nominas')}/${id}`
+    },
+    get NOMINAS_STATS() {
+      return nextApiEndpoint('/api/planillas/nominas/stats')
+    },
+    NOMINA_RECALCULAR(id: number | string) {
+      return `${nextApiEndpoint('/api/planillas/nominas')}/${id}/recalcular`
+    },
+    NOMINA_CAMBIAR_ESTADO(id: number | string) {
+      return `${nextApiEndpoint('/api/planillas/nominas')}/${id}/cambiar_estado`
+    },
+    NOMINA_TOGGLE_ACTIVO(id: number | string) {
+      return `${nextApiEndpoint('/api/planillas/nominas')}/${id}/toggle_activo`
+    },
+    // Detalle de Nóminas
+    get NOMINAS_DETALLE() {
+      return nextApiEndpoint('/api/planillas/nominas-detalle')
+    },
+    NOMINA_DETALLE(id: number | string) {
+      return `${nextApiEndpoint('/api/planillas/nominas-detalle')}/${id}`
+    },
+    NOMINA_DETALLE_AJUSTAR(id: number | string) {
+      return `${nextApiEndpoint('/api/planillas/nominas-detalle')}/${id}/ajustar`
+    },
+    NOMINA_DETALLE_PAGAR(id: number | string) {
+      return `${nextApiEndpoint('/api/planillas/nominas-detalle')}/${id}/pagar`
+    },
+    NOMINA_DETALLE_ANULAR(id: number | string) {
+      return `${nextApiEndpoint('/api/planillas/nominas-detalle')}/${id}/anular`
+    },
+    NOMINA_DETALLE_QUITAR_ANULACION(id: number | string) {
+      return `${nextApiEndpoint('/api/planillas/nominas-detalle')}/${id}/quitar_anulacion`
+    },
   },
   TALLER: {
     get MAQUINARIA() {
@@ -97,6 +154,37 @@ export const API_ENDPOINTS = {
     },
     get MAQUINARIA_EMPRESAS() {
       return nextApiEndpoint('/api/taller/maquinaria/empresas')
+    },
+    // Órdenes de trabajo
+    get ORDENES() {
+      return nextApiEndpoint('/api/taller/ordenes')
+    },
+    ORDEN(id: number | string) {
+      return `${nextApiEndpoint('/api/taller/ordenes')}/${id}`
+    },
+    ORDEN_CAMBIAR_ESTADO(id: number | string) {
+      return `${nextApiEndpoint('/api/taller/ordenes')}/${id}/cambiar_estado`
+    },
+    ORDEN_ACTUALIZAR_PROGRESO(id: number | string) {
+      return `${nextApiEndpoint('/api/taller/ordenes')}/${id}/actualizar_progreso`
+    },
+    ORDEN_DESACTIVAR(id: number | string) {
+      return `${nextApiEndpoint('/api/taller/ordenes')}/${id}/desactivar`
+    },
+    ORDEN_ACTIVAR(id: number | string) {
+      return `${nextApiEndpoint('/api/taller/ordenes')}/${id}/activar`
+    },
+    get ORDENES_ESTADISTICAS() {
+      return nextApiEndpoint('/api/taller/ordenes/estadisticas')
+    },
+    get ORDENES_TIPOS_MANTENIMIENTO() {
+      return nextApiEndpoint('/api/taller/ordenes/tipos_mantenimiento')
+    },
+    get ORDENES_PRIORIDADES() {
+      return nextApiEndpoint('/api/taller/ordenes/prioridades')
+    },
+    get ORDENES_ESTADOS() {
+      return nextApiEndpoint('/api/taller/ordenes/estados')
     },
   },
   REPORTES: {
@@ -121,7 +209,7 @@ export const API_ENDPOINTS = {
       return `${nextApiEndpoint('/api/facturacion/facturas')}/${id}/agregar-pagos-multiples`
     },
     FACTURA_ANULAR(id: number | string) {
-      return `${nextApiEndpoint('/api/facturacion/facturas')}/${id}/anular`
+      return `${DJANGO_API_BASE}/api/facturacion/facturas/${id}/anular/`
     },
     get FACTURAS_ESTADISTICAS() {
       return nextApiEndpoint('/api/facturacion/facturas/estadisticas')
@@ -140,4 +228,3 @@ export const API_ENDPOINTS = {
 }
 
 export default DJANGO_API_BASE
-

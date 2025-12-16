@@ -12,6 +12,8 @@ import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2, ArrowLeft } from "lucide-react"
 import Link from "next/link"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet, apiPut } from "@/lib/api-client"
 
 interface EditarAsistenciaPageProps {
   params: Promise<{
@@ -19,70 +21,26 @@ interface EditarAsistenciaPageProps {
   }>
 }
 
-// Datos estáticos de empleados para el select
-const empleadosEstaticos = [
-  { id: "1", codigo: "EMP001", nombre: "Juan Pérez" },
-  { id: "2", codigo: "EMP002", nombre: "María González" },
-  { id: "3", codigo: "EMP003", nombre: "Carlos Rodríguez" },
-  { id: "4", codigo: "EMP004", nombre: "Ana Martínez" },
-  { id: "5", codigo: "EMP005", nombre: "Luis Hernández" },
-  { id: "6", codigo: "EMP006", nombre: "Sofía Ramírez" },
-  { id: "7", codigo: "EMP007", nombre: "Pedro López" },
-  { id: "8", codigo: "EMP008", nombre: "Carmen Torres" },
-]
+interface Asistencia {
+  id: string
+  empleadoId: string
+  empleado: string
+  codigo: string
+  fecha: string
+  horaEntrada: string
+  horaSalida: string
+  estado: string
+  fechaRetorno: string
+  observaciones: string
+  activo: boolean
+}
 
-// Datos estáticos de asistencias (simulando datos de la API)
-const asistenciasEstaticas: Record<string, any> = {
-  "1": {
-    id: "1",
-    empleadoId: "1",
-    fecha: "2024-01-15",
-    horaEntrada: "08:00",
-    horaSalida: "17:00",
-    estado: "presente",
-    fechaRetorno: "",
-    observaciones: "",
-  },
-  "2": {
-    id: "2",
-    empleadoId: "2",
-    fecha: "2024-01-15",
-    horaEntrada: "08:15",
-    horaSalida: "17:30",
-    estado: "presente",
-    fechaRetorno: "",
-    observaciones: "Llegó 15 minutos tarde",
-  },
-  "3": {
-    id: "3",
-    empleadoId: "3",
-    fecha: "2024-01-15",
-    horaEntrada: "",
-    horaSalida: "",
-    estado: "ausente",
-    fechaRetorno: "",
-    observaciones: "Sin justificación",
-  },
-  "4": {
-    id: "4",
-    empleadoId: "4",
-    fecha: "2024-01-15",
-    horaEntrada: "",
-    horaSalida: "",
-    estado: "licencia_medica",
-    fechaRetorno: "2024-01-25",
-    observaciones: "Licencia médica por 10 días",
-  },
-  "5": {
-    id: "5",
-    empleadoId: "5",
-    fecha: "2024-01-15",
-    horaEntrada: "",
-    horaSalida: "",
-    estado: "vacaciones",
-    fechaRetorno: "2024-02-01",
-    observaciones: "Vacaciones anuales",
-  },
+interface Empleado {
+  id: string
+  codigo: string
+  nombres: string
+  apellidos: string
+  nombreCompleto: string
 }
 
 export default function EditarAsistenciaPage({ params }: EditarAsistenciaPageProps) {
@@ -90,6 +48,8 @@ export default function EditarAsistenciaPage({ params }: EditarAsistenciaPagePro
   const { toast } = useToast()
   const { id } = use(params)
 
+  const [asistencia, setAsistencia] = useState<Asistencia | null>(null)
+  const [empleados, setEmpleados] = useState<Empleado[]>([])
   const [empleadoId, setEmpleadoId] = useState<string>("")
   const [fecha, setFecha] = useState<string>("")
   const [horaEntrada, setHoraEntrada] = useState<string>("")
@@ -100,21 +60,31 @@ export default function EditarAsistenciaPage({ params }: EditarAsistenciaPagePro
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
-  // Cargar asistencia desde datos estáticos (simulando API)
+  // Cargar asistencia y empleados
   useEffect(() => {
-    const loadAsistencia = async () => {
+    const loadData = async () => {
       try {
         setLoading(true)
         
-        // Simular carga de datos
-        await new Promise((resolve) => setTimeout(resolve, 500))
+        // Cargar asistencia y empleados en paralelo
+        const [asistenciaData, empleadosData] = await Promise.all([
+          apiGet<Asistencia>(API_ENDPOINTS.PLANILLAS.ASISTENCIA(id)),
+          apiGet<Empleado[]>(API_ENDPOINTS.PLANILLAS.EMPLEADOS),
+        ])
         
-        const asistenciaData = asistenciasEstaticas[id] || asistenciasEstaticas["1"]
+        setAsistencia(asistenciaData)
+        setEmpleados(empleadosData)
         
+        // Establecer valores del formulario
         setEmpleadoId(asistenciaData.empleadoId || "")
         setFecha(asistenciaData.fecha || new Date().toISOString().split("T")[0])
-        setHoraEntrada(asistenciaData.horaEntrada || "")
-        setHoraSalida(asistenciaData.horaSalida || "")
+        
+        // Limpiar hora si viene como "-"
+        const horaEnt = asistenciaData.horaEntrada === "-" ? "" : (asistenciaData.horaEntrada || "")
+        const horaSal = asistenciaData.horaSalida === "-" ? "" : (asistenciaData.horaSalida || "")
+        setHoraEntrada(horaEnt.slice(0, 5)) // Formato HH:MM
+        setHoraSalida(horaSal.slice(0, 5))
+        
         setEstado(asistenciaData.estado || "presente")
         setFechaRetorno(asistenciaData.fechaRetorno || "")
         setObservaciones(asistenciaData.observaciones || "")
@@ -131,7 +101,7 @@ export default function EditarAsistenciaPage({ params }: EditarAsistenciaPagePro
       }
     }
 
-    loadAsistencia()
+    loadData()
   }, [id, router, toast])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -150,7 +120,7 @@ export default function EditarAsistenciaPage({ params }: EditarAsistenciaPagePro
     if ((estado === "licencia_medica" || estado === "vacaciones") && !fechaRetorno) {
       toast({
         title: "Error de validación",
-        description: "La fecha de retorno es obligatoria para Licencia Medica y Vacaciones.",
+        description: "La fecha de retorno es obligatoria para Licencia Médica y Vacaciones.",
         variant: "destructive",
       })
       return
@@ -159,16 +129,30 @@ export default function EditarAsistenciaPage({ params }: EditarAsistenciaPagePro
     try {
       setSubmitting(true)
 
-      // Aquí iría la llamada a la API cuando esté conectada
-      // await apiPut(`${API_ENDPOINTS.PLANILLAS.ASISTENCIAS}/${id}`, asistenciaData)
+      const asistenciaData = {
+        empleadoId: parseInt(empleadoId),
+        fecha,
+        horaEntrada: horaEntrada || null,
+        horaSalida: horaSalida || null,
+        estado,
+        fechaRetorno: fechaRetorno || null,
+        observaciones: observaciones || null,
+      }
 
-      // Simulación de éxito
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const response = await apiPut<any>(API_ENDPOINTS.PLANILLAS.ASISTENCIA(id), asistenciaData)
 
-      toast({
-        title: "Asistencia Actualizada",
-        description: "La asistencia ha sido actualizada exitosamente.",
-      })
+      // Verificar si se crearon registros adicionales (vacaciones o licencia médica)
+      if (response.registros_adicionales && response.registros_adicionales > 0) {
+        toast({
+          title: "Asistencia Actualizada",
+          description: response.mensaje || `Actualizado. Se crearon ${response.registros_adicionales} registros adicionales.`,
+        })
+      } else {
+        toast({
+          title: "Asistencia Actualizada",
+          description: "La asistencia ha sido actualizada exitosamente.",
+        })
+      }
       router.push("/planillas/asistencias")
     } catch (error: any) {
       console.error("Error al actualizar asistencia:", error)
@@ -184,81 +168,101 @@ export default function EditarAsistenciaPage({ params }: EditarAsistenciaPagePro
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center gap-2">
-          <Loader2 className="h-6 w-6 animate-spin" />
-          <span className="text-lg">Cargando asistencia...</span>
-        </div>
+      <div className="flex flex-col items-center justify-center py-12 gap-3">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <span className="text-muted-foreground">Cargando asistencia...</span>
       </div>
     )
   }
 
-  const empleadoSeleccionado = empleadosEstaticos.find((e) => e.id === empleadoId)
-
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-col gap-4 p-2 sm:p-0">
+      {/* Header */}
+      <div className="flex items-center gap-2 sm:gap-3">
         <Link href="/planillas/asistencias">
-          <Button variant="outline" size="icon">
+          <Button variant="outline" size="icon" className="h-8 w-8 sm:h-10 sm:w-10">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <h1 className="text-3xl font-bold">Editar Asistencia</h1>
+        <div>
+          <h1 className="text-xl sm:text-3xl font-bold">Editar Asistencia</h1>
+          <p className="text-xs sm:text-base text-muted-foreground hidden sm:block">
+            Modifica la información de la asistencia
+          </p>
+        </div>
       </div>
-      <p className="text-muted-foreground">Modifica la información de la asistencia.</p>
 
-      <form onSubmit={handleSubmit} className="grid gap-6">
+      {/* Info del empleado actual - Solo móvil */}
+      {asistencia && (
+        <div className="sm:hidden bg-muted/50 rounded-lg p-3">
+          <p className="text-sm font-medium">{asistencia.empleado}</p>
+          <p className="text-xs text-muted-foreground">{asistencia.codigo} • {new Date(asistencia.fecha + 'T12:00:00').toLocaleDateString("es-GT")}</p>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="grid gap-4 sm:gap-6">
         {/* Información de Asistencia */}
         <Card>
-          <CardHeader>
-            <CardTitle>Información de Asistencia</CardTitle>
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-base sm:text-lg">Información de Asistencia</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="empleado">Empleado *</Label>
-              <Select value={empleadoId} onValueChange={setEmpleadoId} required>
-                <SelectTrigger id="empleado">
-                  <SelectValue placeholder="Selecciona un empleado" />
-                </SelectTrigger>
-                <SelectContent>
-                  {empleadosEstaticos.map((empleado) => (
-                    <SelectItem key={empleado.id} value={empleado.id}>
-                      {empleado.codigo} - {empleado.nombre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0 grid gap-4">
+            {/* Empleado y Fecha */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="empleado" className="text-sm">Empleado *</Label>
+                <Select value={empleadoId} onValueChange={setEmpleadoId} required>
+                  <SelectTrigger id="empleado">
+                    <SelectValue placeholder="Selecciona un empleado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {empleados.map((empleado) => (
+                      <SelectItem key={empleado.id} value={empleado.id}>
+                        <span className="truncate">
+                          {empleado.codigo} - {empleado.nombreCompleto || `${empleado.nombres} ${empleado.apellidos}`}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="fecha" className="text-sm">Fecha *</Label>
+                <Input
+                  id="fecha"
+                  type="date"
+                  value={fecha}
+                  onChange={(e) => setFecha(e.target.value)}
+                  required
+                />
+              </div>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="fecha">Fecha *</Label>
-              <Input
-                id="fecha"
-                type="date"
-                value={fecha}
-                onChange={(e) => setFecha(e.target.value)}
-                required
-              />
+
+            {/* Hora Entrada y Salida */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="horaEntrada" className="text-sm">Hora Entrada</Label>
+                <Input
+                  id="horaEntrada"
+                  type="time"
+                  value={horaEntrada}
+                  onChange={(e) => setHoraEntrada(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="horaSalida" className="text-sm">Hora Salida</Label>
+                <Input
+                  id="horaSalida"
+                  type="time"
+                  value={horaSalida}
+                  onChange={(e) => setHoraSalida(e.target.value)}
+                />
+              </div>
             </div>
+
+            {/* Estado */}
             <div className="grid gap-2">
-              <Label htmlFor="horaEntrada">Hora de Entrada</Label>
-              <Input
-                id="horaEntrada"
-                type="time"
-                value={horaEntrada}
-                onChange={(e) => setHoraEntrada(e.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="horaSalida">Hora de Salida</Label>
-              <Input
-                id="horaSalida"
-                type="time"
-                value={horaSalida}
-                onChange={(e) => setHoraSalida(e.target.value)}
-              />
-            </div>
-            <div className="grid gap-2 md:col-span-2">
-              <Label htmlFor="estado">Estado *</Label>
+              <Label htmlFor="estado" className="text-sm">Estado *</Label>
               <Select value={estado} onValueChange={setEstado} required>
                 <SelectTrigger id="estado">
                   <SelectValue placeholder="Selecciona un estado" />
@@ -269,14 +273,16 @@ export default function EditarAsistenciaPage({ params }: EditarAsistenciaPagePro
                   <SelectItem value="vacaciones">Vacaciones</SelectItem>
                   <SelectItem value="permiso_con_goce">Permiso con goce</SelectItem>
                   <SelectItem value="permiso_sin_goce">Permiso sin goce</SelectItem>
-                  <SelectItem value="licencia_medica">Licencia Medica</SelectItem>
+                  <SelectItem value="licencia_medica">Licencia Médica</SelectItem>
                   <SelectItem value="ausente">Ausente</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Fecha de Retorno - Condicional */}
             {(estado === "licencia_medica" || estado === "vacaciones") && (
-              <div className="grid gap-2 md:col-span-2">
-                <Label htmlFor="fechaRetorno">Fecha de Retorno *</Label>
+              <div className="grid gap-2">
+                <Label htmlFor="fechaRetorno" className="text-sm">Fecha de Retorno *</Label>
                 <Input
                   id="fechaRetorno"
                   type="date"
@@ -287,24 +293,38 @@ export default function EditarAsistenciaPage({ params }: EditarAsistenciaPagePro
                 />
               </div>
             )}
-            <div className="grid gap-2 md:col-span-2">
-              <Label htmlFor="observaciones">Observaciones</Label>
+
+            {/* Observaciones */}
+            <div className="grid gap-2">
+              <Label htmlFor="observaciones" className="text-sm">Observaciones</Label>
               <Textarea
                 id="observaciones"
                 value={observaciones}
                 onChange={(e) => setObservaciones(e.target.value)}
                 placeholder="Notas adicionales sobre la asistencia..."
                 rows={3}
+                className="resize-none"
               />
             </div>
           </CardContent>
         </Card>
 
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => router.back()} disabled={submitting}>
+        {/* Botones de acción */}
+        <div className="flex flex-col-reverse sm:flex-row justify-end gap-2">
+          <Button 
+            type="button" 
+            variant="outline" 
+            onClick={() => router.back()} 
+            disabled={submitting}
+            className="w-full sm:w-auto"
+          >
             Cancelar
           </Button>
-          <Button type="submit" disabled={submitting}>
+          <Button 
+            type="submit" 
+            disabled={submitting}
+            className="w-full sm:w-auto"
+          >
             {submitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -319,4 +339,3 @@ export default function EditarAsistenciaPage({ params }: EditarAsistenciaPagePro
     </div>
   )
 }
-

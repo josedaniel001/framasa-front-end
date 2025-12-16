@@ -38,6 +38,7 @@ interface Producto {
   categoria_id: number
   unidad_medida_id: number
   precio_venta: number
+  precio_descuento?: number | null
   costo_unitario: number
   stock_actual: number
   stock_minimo: number
@@ -61,6 +62,7 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
   const [descripcion, setDescripcion] = useState<string>("")
   const [categoriaId, setCategoriaId] = useState<string>("")
   const [precioVenta, setPrecioVenta] = useState<number>(0)
+  const [precioDescuento, setPrecioDescuento] = useState<number | null>(null)
   const [costoUnitario, setCostoUnitario] = useState<number>(0)
   const [unidadMedidaId, setUnidadMedidaId] = useState<string>("")
   const [stockActual, setStockActual] = useState<number>(0)
@@ -120,6 +122,7 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
         setDescripcion(productoData.descripcion || "")
         setCategoriaId(String(productoData.categoria_id || ''))
         setPrecioVenta(productoData.precio_venta || 0)
+        setPrecioDescuento(productoData.precio_descuento ?? null)
         setCostoUnitario(productoData.costo_unitario || 0)
         setUnidadMedidaId(String(productoData.unidad_medida_id || ''))
         setStockActual(productoData.stock_actual || 0)
@@ -175,6 +178,7 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
         categoria_id: Number(categoriaId),
         unidad_medida_id: Number(unidadMedidaId),
         precio_venta: precioVenta,
+        precio_descuento: precioDescuento,
         costo_unitario: costoUnitario,
         stock_actual: stockActual,
         stock_minimo: stockMinimo,
@@ -310,6 +314,21 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
                 min="0"
                 required
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="precioDescuento">Precio con Descuento (Q)</Label>
+              <Input
+                id="precioDescuento"
+                type="number"
+                value={precioDescuento ?? ""}
+                onChange={(e) => setPrecioDescuento(e.target.value ? Number(e.target.value) : null)}
+                step="0.01"
+                min="0"
+                placeholder="Opcional - Precio con descuento aplicado"
+              />
+              <p className="text-xs text-muted-foreground">
+                Deja vacío si no hay descuento. Este precio se mostrará como oferta.
+              </p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="costoUnitario">Costo Unitario (Q)</Label>

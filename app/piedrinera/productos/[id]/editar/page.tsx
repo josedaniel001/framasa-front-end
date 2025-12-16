@@ -35,6 +35,7 @@ export default function EditarAgregadoPiedrineraPage({ params }: EditarAgregadoP
   const [tipo, setTipo] = useState<string>("")
   const [granulometria, setGranulometria] = useState<string>("")
   const [precioVentaPorMetroCubico, setPrecioVentaPorMetroCubico] = useState<number>(0)
+  const [precioDescuentoPorMetroCubico, setPrecioDescuentoPorMetroCubico] = useState<number | null>(null)
   const [costoProduccionPorMetroCubico, setCostoProduccionPorMetroCubico] = useState<number>(0)
   const [stockActualMetrosCubicos, setStockActualMetrosCubicos] = useState<number>(0)
   const [stockMinimoMetrosCubicos, setStockMinimoMetrosCubicos] = useState<number>(0)
@@ -58,6 +59,7 @@ export default function EditarAgregadoPiedrineraPage({ params }: EditarAgregadoP
         setTipo(agregado.tipo || "")
         setGranulometria(agregado.granulometria || "")
         setPrecioVentaPorMetroCubico(agregado.precioVentaPorMetroCubico || agregado.precio_venta_m3 || 0)
+        setPrecioDescuentoPorMetroCubico(agregado.precioDescuentoPorMetroCubico ?? agregado.precio_descuento_m3 ?? null)
         setCostoProduccionPorMetroCubico(agregado.costoProduccionPorMetroCubico || agregado.costo_produccion_m3 || 0)
         setStockActualMetrosCubicos(agregado.stockActualMetrosCubicos || agregado.stock_actual_m3 || 0)
         setStockMinimoMetrosCubicos(agregado.stockMinimoMetrosCubicos || agregado.stock_minimo_m3 || 0)
@@ -112,6 +114,7 @@ export default function EditarAgregadoPiedrineraPage({ params }: EditarAgregadoP
         tipo,
         granulometria: granulometria || null,
         precio_venta_m3: precioVentaPorMetroCubico,
+        precio_descuento_m3: precioDescuentoPorMetroCubico,
         costo_produccion_m3: costoProduccionPorMetroCubico,
         stock_actual_m3: stockActualMetrosCubicos,
         stock_minimo_m3: stockMinimoMetrosCubicos,
@@ -242,6 +245,22 @@ export default function EditarAgregadoPiedrineraPage({ params }: EditarAgregadoP
                 required
                 disabled={saving}
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="precioDescuentoPorMetroCubico">Precio con Descuento por m³ (Q)</Label>
+              <Input
+                id="precioDescuentoPorMetroCubico"
+                type="number"
+                value={precioDescuentoPorMetroCubico ?? ""}
+                onChange={(e) => setPrecioDescuentoPorMetroCubico(e.target.value ? Number(e.target.value) : null)}
+                step="0.01"
+                min="0"
+                placeholder="Opcional - Precio con descuento aplicado"
+                disabled={saving}
+              />
+              <p className="text-xs text-muted-foreground">
+                Deja vacío si no hay descuento. Este precio se mostrará como oferta.
+              </p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="costoProduccionPorMetroCubico">Costo de Producción por m³ (Q) *</Label>

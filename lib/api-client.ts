@@ -3,6 +3,7 @@
  */
 
 import { API_ENDPOINTS } from '@/lib/api-config'
+import { triggerSessionExpired } from '@/contexts/session-context'
 
 /**
  * Obtiene el token de autenticación desde localStorage
@@ -10,6 +11,34 @@ import { API_ENDPOINTS } from '@/lib/api-config'
 function getAuthToken(): string | null {
   if (typeof window === 'undefined') return null
   return localStorage.getItem('token')
+}
+
+/**
+ * Verifica si el error es por sesión expirada (401 Unauthorized)
+ */
+function handleUnauthorizedError(status: number, errorData?: any): boolean {
+  if (status === 401) {
+    // Verificar si es un error de token expirado o inválido
+    const isTokenError = 
+      errorData?.code === 'token_invalid' ||
+      errorData?.code === 'token_expired' ||
+      errorData?.code === 'token_missing' ||
+      errorData?.redirect === '/login' ||
+      errorData?.detail?.includes?.('token') ||
+      errorData?.error?.includes?.('token') ||
+      errorData?.error?.includes?.('Token') ||
+      errorData?.error?.includes?.('expirado') ||
+      errorData?.error?.includes?.('inválido') ||
+      errorData?.detail?.includes?.('expired') ||
+      errorData?.detail?.includes?.('invalid')
+    
+    if (isTokenError || status === 401) {
+      // Disparar el modal de sesión expirada
+      triggerSessionExpired()
+      return true
+    }
+  }
+  return false
 }
 
 /**
@@ -46,8 +75,9 @@ export async function apiGet<T>(endpoint: string): Promise<T> {
   
   if (!response.ok) {
     let errorMessage = `API Error: ${response.status} ${response.statusText}`
+    let errorData: any = {}
     try {
-      const errorData = await response.json()
+      errorData = await response.json()
       // Priorizar error, luego detail, luego message para compatibilidad con ambos formatos
       if (errorData.error) {
         errorMessage = errorData.error
@@ -61,15 +91,18 @@ export async function apiGet<T>(endpoint: string): Promise<T> {
     } catch {
       // Si no se puede parsear el JSON, usar el mensaje por defecto
     }
+    
+    // Verificar si es error de sesión expirada
+    if (handleUnauthorizedError(response.status, errorData)) {
+      const error: any = new Error('Sesión expirada')
+      error.status = 401
+      error.isSessionExpired = true
+      throw error
+    }
+    
     const error: any = new Error(errorMessage)
     error.status = response.status
-    // Intentar obtener el error data para el objeto response, pero no fallar si no se puede
-    try {
-      const errorData = await response.clone().json().catch(() => ({}))
-      error.response = { data: errorData }
-    } catch {
-      error.response = response
-    }
+    error.response = { data: errorData }
     throw error
   }
   
@@ -88,8 +121,9 @@ export async function apiPost<T>(endpoint: string, data: any): Promise<T> {
   if (!response.ok) {
     let errorMessage = `API Error: ${response.status} ${response.statusText}`
     let errorCode = null
+    let errorData: any = {}
     try {
-      const errorData = await response.json()
+      errorData = await response.json()
       if (errorData.detail) {
         errorMessage = errorData.detail
       } else if (errorData.message) {
@@ -105,10 +139,19 @@ export async function apiPost<T>(endpoint: string, data: any): Promise<T> {
     } catch {
       // Si no se puede parsear el JSON, usar el mensaje por defecto
     }
+    
+    // Verificar si es error de sesión expirada
+    if (handleUnauthorizedError(response.status, errorData)) {
+      const error: any = new Error('Sesión expirada')
+      error.status = 401
+      error.isSessionExpired = true
+      throw error
+    }
+    
     const error = new Error(errorMessage) as any
     error.status = response.status
     error.code = errorCode
-    error.response = response
+    error.response = { data: errorData }
     throw error
   }
   
@@ -126,8 +169,9 @@ export async function apiPut<T>(endpoint: string, data: any): Promise<T> {
   
   if (!response.ok) {
     let errorMessage = `API Error: ${response.status} ${response.statusText}`
+    let errorData: any = {}
     try {
-      const errorData = await response.json()
+      errorData = await response.json()
       if (errorData.detail) {
         errorMessage = errorData.detail
       } else if (errorData.message) {
@@ -152,9 +196,62 @@ export async function apiPut<T>(endpoint: string, data: any): Promise<T> {
     } catch {
       // Si no se puede parsear el JSON, usar el mensaje por defecto
     }
+    
+    // Verificar si es error de sesión expirada
+    if (handleUnauthorizedError(response.status, errorData)) {
+      const error: any = new Error('Sesión expirada')
+      error.status = 401
+      error.isSessionExpired = true
+      throw error
+    }
+    
     const error = new Error(errorMessage) as any
     error.status = response.status
-    error.response = response
+    error.response = { data: errorData }
+    throw error
+  }
+  
+  return response.json()
+}
+
+/**
+ * Realiza un PATCH request autenticado
+ */
+export async function apiPatch<T>(endpoint: string, data: any): Promise<T> {
+  const response = await apiFetch(endpoint, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+  
+  if (!response.ok) {
+    let errorMessage = `API Error: ${response.status} ${response.statusText}`
+    let errorData: any = {}
+    try {
+      errorData = await response.json()
+      if (errorData.detail) {
+        errorMessage = errorData.detail
+      } else if (errorData.message) {
+        errorMessage = errorData.message
+      } else if (errorData.error) {
+        errorMessage = errorData.error
+      } else if (typeof errorData === 'string') {
+        errorMessage = errorData
+      }
+    } catch {
+      // Si no se puede parsear el JSON, usar el mensaje por defecto
+    }
+    
+    // Verificar si es error de sesión expirada
+    if (handleUnauthorizedError(response.status, errorData)) {
+      const error: any = new Error('Sesión expirada')
+      error.status = 401
+      error.isSessionExpired = true
+      throw error
+    }
+    
+    const error = new Error(errorMessage) as any
+    error.status = response.status
+    error.response = { data: errorData }
     throw error
   }
   
@@ -169,8 +266,9 @@ export async function apiDelete<T>(endpoint: string): Promise<T> {
   
   if (!response.ok) {
     let errorMessage = `API Error: ${response.status} ${response.statusText}`
+    let errorData: any = {}
     try {
-      const errorData = await response.json()
+      errorData = await response.json()
       if (errorData.detail) {
         errorMessage = errorData.detail
       } else if (errorData.message) {
@@ -181,9 +279,18 @@ export async function apiDelete<T>(endpoint: string): Promise<T> {
     } catch {
       // Si no se puede parsear el JSON, usar el mensaje por defecto
     }
+    
+    // Verificar si es error de sesión expirada
+    if (handleUnauthorizedError(response.status, errorData)) {
+      const error: any = new Error('Sesión expirada')
+      error.status = 401
+      error.isSessionExpired = true
+      throw error
+    }
+    
     const error = new Error(errorMessage) as any
     error.status = response.status
-    error.response = response
+    error.response = { data: errorData }
     throw error
   }
   

@@ -5,6 +5,7 @@ export enum ModuloSistema {
   PIEDRINERA = "piedrinera",
   TALLER = "taller",
   PLANILLAS = "planillas",
+  CAJA = "caja",
   REPORTES = "reportes",
 }
 
