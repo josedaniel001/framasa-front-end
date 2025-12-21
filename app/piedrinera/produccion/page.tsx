@@ -1,11 +1,10 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
 import {
@@ -100,18 +99,6 @@ const calidadColors = {
 export default function PiedrinerapProduccionPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [filterEstado, setFilterEstado] = useState("todos")
-  const [selectedLote, setSelectedLote] = useState<any>(null)
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
-
-  const handleOpenDetailModal = useCallback((lote: any) => {
-    setSelectedLote(lote)
-    setIsDetailModalOpen(true)
-  }, [])
-
-  const handleCloseDetailModal = useCallback(() => {
-    setIsDetailModalOpen(false)
-    setSelectedLote(null)
-  }, [])
 
   const filteredLotes = produccionData.filter((lote) => {
     const matchesSearch =
@@ -294,8 +281,10 @@ export default function PiedrinerapProduccionPage() {
                       </Badge>
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => handleOpenDetailModal(lote)}>
-                        <Eye className="h-4 w-4" />
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/piedrinera/produccion/${lote.id}`}>
+                          <Eye className="h-4 w-4" />
+                        </Link>
                       </Button>
                       <Button variant="outline" size="sm" asChild>
                         <Link href={`/piedrinera/produccion/${lote.id}/editar`}>
@@ -310,97 +299,6 @@ export default function PiedrinerapProduccionPage() {
           )
         })}
       </div>
-
-      {/* Modal de detalles */}
-      <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Detalles de Producción - {selectedLote?.id}</DialogTitle>
-          </DialogHeader>
-          {selectedLote && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <h4 className="font-semibold mb-3">Información General</h4>
-                  <div className="space-y-2 text-sm">
-                    <p>
-                      <span className="font-medium">Fecha:</span> {selectedLote.fecha}
-                    </p>
-                    <p>
-                      <span className="font-medium">Agregado:</span> {selectedLote.agregado}
-                    </p>
-                    <p>
-                      <span className="font-medium">Cantera:</span> {selectedLote.cantera}
-                    </p>
-                    <p>
-                      <span className="font-medium">Operador:</span> {selectedLote.operador}
-                    </p>
-                    <p>
-                      <span className="font-medium">Turno:</span> {selectedLote.turno}
-                    </p>
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-semibold mb-3">Estado y Calidad</h4>
-                  <div className="space-y-2 text-sm">
-                    <p>
-                      <span className="font-medium">Estado:</span>
-                      <Badge className={`ml-2 ${estadoColors[selectedLote.estado as keyof typeof estadoColors]}`}>
-                        {selectedLote.estado}
-                      </Badge>
-                    </p>
-                    <p>
-                      <span className="font-medium">Calidad:</span>
-                      <Badge className={`ml-2 ${calidadColors[selectedLote.calidad as keyof typeof calidadColors]}`}>
-                        {selectedLote.calidad}
-                      </Badge>
-                    </p>
-                    <p>
-                      <span className="font-medium">Vol. Planificado:</span> {selectedLote.volumenPlanificado} m³
-                    </p>
-                    <p>
-                      <span className="font-medium">Vol. Producido:</span> {selectedLote.volumenProducido} m³
-                    </p>
-                    <div className="mt-2">
-                      <Progress
-                        value={
-                          selectedLote.volumenPlanificado > 0
-                            ? (selectedLote.volumenProducido / selectedLote.volumenPlanificado) * 100
-                            : 0
-                        }
-                        className="h-2"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="font-semibold mb-3">Equipos Utilizados</h4>
-                <div className="flex flex-wrap gap-2">
-                  {selectedLote.equipos.map((equipo: string, index: number) => (
-                    <Badge key={index} variant="outline">
-                      {equipo}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <h4 className="font-semibold mb-2">Observaciones</h4>
-                <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded">{selectedLote.observaciones}</p>
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={handleCloseDetailModal}>
-                  Cerrar
-                </Button>
-                <Button>Editar Lote</Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

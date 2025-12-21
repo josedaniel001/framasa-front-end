@@ -1,12 +1,25 @@
+"use client"
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Package, ShoppingCart, Users, FileText } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Package, Archive, ShoppingCart, FileText, Users, CreditCard, ArrowLeft } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
 export default function FerreteriaHomePage() {
+  const router = useRouter()
+
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-3xl font-bold">Módulo de Ferretería</h1>
-      <p className="text-muted-foreground">Gestión integral de productos, inventario, ventas y clientes.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Módulo de Ferretería</h1>
+          <p className="text-muted-foreground">Gestión integral de productos, inventario, ventas y clientes de la ferretería.</p>
+        </div>
+        <Button variant="outline" onClick={() => router.back()}>
+          <ArrowLeft className="mr-2 h-4 w-4" /> Volver
+        </Button>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Link href="/ferreteria/productos">
@@ -16,8 +29,8 @@ export default function FerreteriaHomePage() {
               <Package className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">Ver y gestionar productos</div>
-              <p className="text-xs text-muted-foreground">Catálogo de todos los artículos disponibles.</p>
+              <div className="text-2xl font-bold">Catálogo de Productos</div>
+              <p className="text-xs text-muted-foreground">Ver, crear y editar productos disponibles en la ferretería.</p>
             </CardContent>
           </Card>
         </Link>
@@ -26,11 +39,11 @@ export default function FerreteriaHomePage() {
           <Card className="hover:shadow-lg transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Inventario</CardTitle>
-              <Package className="h-4 w-4 text-muted-foreground" />
+              <Archive className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">Control de stock</div>
-              <p className="text-xs text-muted-foreground">Gestión de entradas, salidas y ajustes de inventario.</p>
+              <div className="text-2xl font-bold">Control de Inventario</div>
+              <p className="text-xs text-muted-foreground">Gestión de stock, movimientos y alertas de inventario.</p>
             </CardContent>
           </Card>
         </Link>
@@ -42,8 +55,8 @@ export default function FerreteriaHomePage() {
               <ShoppingCart className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">Registrar y consultar ventas</div>
-              <p className="text-xs text-muted-foreground">Historial de transacciones y creación de nuevas ventas.</p>
+              <div className="text-2xl font-bold">Registro de Ventas</div>
+              <p className="text-xs text-muted-foreground">Crear facturas, consultar historial y gestionar transacciones.</p>
             </CardContent>
           </Card>
         </Link>
@@ -55,8 +68,8 @@ export default function FerreteriaHomePage() {
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">Crear y gestionar cotizaciones</div>
-              <p className="text-xs text-muted-foreground">Generación de presupuestos para clientes.</p>
+              <div className="text-2xl font-bold">Gestión de Cotizaciones</div>
+              <p className="text-xs text-muted-foreground">Crear presupuestos, enviar a clientes y convertir a ventas.</p>
             </CardContent>
           </Card>
         </Link>
@@ -68,8 +81,21 @@ export default function FerreteriaHomePage() {
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">Administrar base de clientes</div>
-              <p className="text-xs text-muted-foreground">Información de contacto y historial de compras.</p>
+              <div className="text-2xl font-bold">Base de Clientes</div>
+              <p className="text-xs text-muted-foreground">Administrar información de clientes y fiados.</p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/ferreteria/cuentas-por-cobrar">
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Cuentas por Cobrar</CardTitle>
+              <CreditCard className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">Gestión de Créditos</div>
+              <p className="text-xs text-muted-foreground">Control de pagos pendientes y estados de cuenta de clientes.</p>
             </CardContent>
           </Card>
         </Link>

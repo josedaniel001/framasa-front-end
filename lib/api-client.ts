@@ -3,7 +3,6 @@
  */
 
 import { API_ENDPOINTS } from '@/lib/api-config'
-import { triggerSessionExpired } from '@/contexts/session-context'
 
 /**
  * Obtiene el token de autenticación desde localStorage
@@ -15,29 +14,11 @@ function getAuthToken(): string | null {
 
 /**
  * Verifica si el error es por sesión expirada (401 Unauthorized)
+ * FUNCIONALIDAD DESHABILITADA - Django maneja la expiración de sesión
  */
 function handleUnauthorizedError(status: number, errorData?: any): boolean {
-  if (status === 401) {
-    // Verificar si es un error de token expirado o inválido
-    const isTokenError = 
-      errorData?.code === 'token_invalid' ||
-      errorData?.code === 'token_expired' ||
-      errorData?.code === 'token_missing' ||
-      errorData?.redirect === '/login' ||
-      errorData?.detail?.includes?.('token') ||
-      errorData?.error?.includes?.('token') ||
-      errorData?.error?.includes?.('Token') ||
-      errorData?.error?.includes?.('expirado') ||
-      errorData?.error?.includes?.('inválido') ||
-      errorData?.detail?.includes?.('expired') ||
-      errorData?.detail?.includes?.('invalid')
-    
-    if (isTokenError || status === 401) {
-      // Disparar el modal de sesión expirada
-      triggerSessionExpired()
-      return true
-    }
-  }
+  // La funcionalidad de sesión expirada del frontend ha sido removida
+  // Django debe manejar la expiración de tokens por su cuenta
   return false
 }
 
@@ -316,4 +297,3 @@ export async function apiDelete<T>(endpoint: string): Promise<T> {
     return {} as T
   }
 }
-

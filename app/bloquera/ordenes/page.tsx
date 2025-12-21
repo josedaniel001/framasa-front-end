@@ -7,6 +7,7 @@ import { PlusCircle, Search, ClipboardList, Clock, PlayCircle, CheckCircle, Eye,
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
 import Link from "next/link"
 import { getSampleOrdenesProduccionBloquera } from "@/lib/sample-data"
 
@@ -121,40 +122,74 @@ export default function OrdenesBloqueraPage() {
                 <TableHead>Producto</TableHead>
                 <TableHead>Cantidad Solicitada</TableHead>
                 <TableHead>Cantidad Producida</TableHead>
+                <TableHead>Progreso</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Fecha Creación</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredOrdenes.map((orden) => (
-                <TableRow key={orden.id}>
-                  <TableCell className="font-medium">{orden.codigo}</TableCell>
-                  <TableCell>{orden.nombreProducto}</TableCell>
-                  <TableCell>{orden.cantidadSolicitada}</TableCell>
-                  <TableCell>{orden.cantidadProducida}</TableCell>
-                  <TableCell>
-                    <Badge variant={getStatusVariant(orden.estado)}>{orden.estado}</Badge>
-                  </TableCell>
-                  <TableCell>{orden.fechaCreacion}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Link href={`/bloquera/ordenes/${orden.id}`}>
-                        <Button variant="outline" size="sm">
-                          <Eye className="h-4 w-4" />
-                          <span className="sr-only">Ver</span>
-                        </Button>
-                      </Link>
-                      <Link href={`/bloquera/ordenes/${orden.id}/editar`}>
-                        <Button variant="outline" size="sm">
-                          <Edit className="h-4 w-4" />
-                          <span className="sr-only">Editar</span>
-                        </Button>
-                      </Link>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {filteredOrdenes.map((orden) => {
+                const progreso = orden.cantidadSolicitada > 0
+                  ? Math.min((orden.cantidadProducida / orden.cantidadSolicitada) * 100, 100)
+                  : 0
+                const tieneExcedente = orden.cantidadProducida > orden.cantidadSolicitada
+
+                return (
+                  <TableRow key={orden.id}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        {orden.codigo}
+                        {tieneExcedente && (
+                          <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                            ⚠️ Excedente
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>{orden.nombreProducto}</TableCell>
+                    <TableCell>{orden.cantidadSolicitada}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {orden.cantidadProducida}
+                        {tieneExcedente && (
+                          <span className="text-xs text-amber-600 font-medium">
+                            (+{orden.cantidadProducida - orden.cantidadSolicitada})
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="w-32">
+                      <div className="space-y-1">
+                        <Progress value={progreso} className="h-2" />
+                        <div className="text-xs text-muted-foreground text-center">
+                          {progreso.toFixed(1)}%
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={getStatusVariant(orden.estado)}>{orden.estado}</Badge>
+                    </TableCell>
+                    <TableCell>{orden.fechaCreacion}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Link href={`/bloquera/ordenes/${orden.id}`}>
+                          <Button variant="outline" size="sm">
+                            <Eye className="h-4 w-4" />
+                            <span className="sr-only">Ver</span>
+                          </Button>
+                        </Link>
+                        <Link href={`/bloquera/ordenes/${orden.id}/editar`}>
+                          <Button variant="outline" size="sm">
+                            <Edit className="h-4 w-4" />
+                            <span className="sr-only">Editar</span>
+                          </Button>
+                        </Link>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
           {filteredOrdenes.length === 0 && (

@@ -2,17 +2,18 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { Multiselect, type MultiselectOption } from "@/components/ui/multiselect"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { API_ENDPOINTS } from "@/lib/api-config"
-import { apiPost } from "@/lib/api-client"
+import { apiPost, apiGet } from "@/lib/api-client"
 import { Loader2 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 
@@ -28,7 +29,9 @@ export default function NuevoEmpleadoPage() {
   const [nit, setNit] = useState<string>("")
   const [telefono, setTelefono] = useState<string>("")
   const [email, setEmail] = useState<string>("")
-  const [cargo, setCargo] = useState<string>("")
+  const [cargosSeleccionados, setCargosSeleccionados] = useState<string[]>([])
+  const [cargosOptions, setCargosOptions] = useState<MultiselectOption[]>([])
+  const [loadingCargos, setLoadingCargos] = useState(false)
   const [areaTrabajo, setAreaTrabajo] = useState<string>("")
   const [turno, setTurno] = useState<string>("")
   const [tipoContrato, setTipoContrato] = useState<string>("")
@@ -37,13 +40,40 @@ export default function NuevoEmpleadoPage() {
   const [activo, setActivo] = useState<boolean>(true)
   const [submitting, setSubmitting] = useState(false)
 
+  // Cargar cargos desde la API
+  useEffect(() => {
+    const loadCargos = async () => {
+      try {
+        setLoadingCargos(true)
+        const response = await apiGet(API_ENDPOINTS.PLANILLAS.CARGOS)
+        const options: MultiselectOption[] = (response as any[]).map((cargo: any) => ({
+          value: cargo.id.toString(),
+          label: cargo.nombre,
+          description: cargo.descripcion || undefined,
+        }))
+        setCargosOptions(options)
+      } catch (error) {
+        console.error('Error al cargar cargos:', error)
+        toast({
+          title: "Error",
+          description: "No se pudieron cargar los cargos disponibles.",
+          variant: "destructive",
+        })
+      } finally {
+        setLoadingCargos(false)
+      }
+    }
+
+    loadCargos()
+  }, [toast])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!codigo || !nombres || !apellidos || !cargo || !fechaIngreso || salario < 0) {
+    if (!codigo || !nombres || !apellidos || cargosSeleccionados.length === 0 || !fechaIngreso || salario < 0) {
       toast({
         title: "Error de validación",
-        description: "Por favor, completa los campos obligatorios (Código, Nombres, Apellidos, Cargo, Fecha de Ingreso y Salario).",
+        description: "Por favor, completa los campos obligatorios (Código, Nombres, Apellidos, al menos un Cargo, Fecha de Ingreso y Salario).",
         variant: "destructive",
       })
       return
@@ -62,7 +92,8 @@ export default function NuevoEmpleadoPage() {
         nit: nit || null,
         telefono: telefono || null,
         email: email || null,
-        puesto: cargo,
+        // Enviar los IDs de los cargos seleccionados
+        cargos: cargosSeleccionados.map(id => parseInt(id)),
         area_trabajo: areaTrabajo || null,
         turno: turno || null,
         tipo_contrato: tipoContrato || null,
@@ -82,9 +113,9 @@ export default function NuevoEmpleadoPage() {
       router.push("/planillas/empleados")
     } catch (error: any) {
       console.error("Error al crear empleado:", error)
-      
+
       let errorMessage = error.message || "Error al crear el empleado. Por favor, inténtelo de nuevo."
-      
+
       if (error.status === 401 || error.code === 'token_invalid') {
         errorMessage = "Tu sesión ha expirado. Por favor, inicia sesión nuevamente."
         toast({
@@ -103,7 +134,7 @@ export default function NuevoEmpleadoPage() {
       } else if (error.status === 404) {
         errorMessage = "El endpoint de empleados no está disponible en el backend. Por favor, contacta al administrador del sistema."
       }
-      
+
       toast({
         title: "Error",
         description: errorMessage,
@@ -203,33 +234,18 @@ export default function NuevoEmpleadoPage() {
             <CardTitle>Información Laboral</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="cargo">Cargo / Puesto *</Label>
-              <Select value={cargo} onValueChange={setCargo} required>
-                <SelectTrigger id="cargo">
-                  <SelectValue placeholder="Selecciona un puesto" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Gerente General">Gerente General</SelectItem>
-                  <SelectItem value="Gerente de Operaciones">Gerente de Operaciones</SelectItem>
-                  <SelectItem value="Supervisor">Supervisor</SelectItem>
-                  <SelectItem value="Jefe de Producción">Jefe de Producción</SelectItem>
-                  <SelectItem value="Jefe de Bodega">Jefe de Bodega</SelectItem>
-                  <SelectItem value="Operador de Maquinaria">Operador de Maquinaria</SelectItem>
-                  <SelectItem value="Operador de Producción">Operador de Producción</SelectItem>
-                  <SelectItem value="Conductor">Conductor</SelectItem>
-                  <SelectItem value="Ayudante de Producción">Ayudante de Producción</SelectItem>
-                  <SelectItem value="Mecánico">Mecánico</SelectItem>
-                  <SelectItem value="Vendedor">Vendedor</SelectItem>
-                  <SelectItem value="Cajero">Cajero</SelectItem>
-                  <SelectItem value="Contador">Contador</SelectItem>
-                  <SelectItem value="Asistente Administrativo">Asistente Administrativo</SelectItem>
-                  <SelectItem value="Secretaria">Secretaria</SelectItem>
-                  <SelectItem value="Vigilante">Vigilante</SelectItem>
-                  <SelectItem value="Mantenimiento">Mantenimiento</SelectItem>
-                  <SelectItem value="Otro">Otro</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid gap-2 md:col-span-2">
+              <Label htmlFor="cargos">Cargos / Puestos *</Label>
+              <Multiselect
+                options={cargosOptions}
+                value={cargosSeleccionados}
+                onValueChange={setCargosSeleccionados}
+                placeholder="Selecciona uno o más cargos"
+                searchPlaceholder="Buscar cargos..."
+                emptyMessage="No se encontraron cargos."
+                loading={loadingCargos}
+                disabled={loadingCargos}
+              />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="areaTrabajo">Área de Trabajo</Label>
@@ -323,4 +339,3 @@ export default function NuevoEmpleadoPage() {
     </div>
   )
 }
-

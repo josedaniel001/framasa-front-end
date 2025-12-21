@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,42 +15,257 @@ import {
   DollarSign,
   ShoppingCart,
   AlertTriangle,
+  TrendingUp,
+  TrendingDown,
+  Loader2,
 } from "lucide-react"
 import Link from "next/link"
+import { useToast } from "@/hooks/use-toast"
+
+interface ActividadReciente {
+  id: string
+  tipo: 'info' | 'warning' | 'danger'
+  titulo: string
+  descripcion: string
+  monto?: string
+  estado?: string
+  empresa?: string
+  tiempo: string
+  icono: string
+}
+
+interface DashboardMetrics {
+  ventas_mes: {
+    valor: number
+    formateado: string
+    cambio_porcentaje: number
+    cambio_formateado: string
+    tendencia: 'up' | 'down'
+  }
+  ordenes_pendientes: {
+    valor: number
+    cambio: number
+    cambio_formateado: string
+    tendencia: 'up' | 'down'
+  }
+  productos_stock: {
+    valor: number
+    formateado: string
+    cambio_porcentaje: number
+    cambio_formateado: string
+    tendencia: 'up' | 'down'
+  }
+  alertas_activas: {
+    valor: number
+    cambio: number
+    cambio_formateado: string
+    tendencia: 'up' | 'down'
+  }
+  actividades_recientes: ActividadReciente[]
+  resumen_por_empresa: {
+    ferreteria: { ventas_mes: number; productos_stock: number; alertas: number }
+    bloquera: { ordenes_pendientes: number; productos_stock: number; alertas: number }
+    piedrinera: { productos_stock: number; alertas: number }
+  }
+}
 
 export default function DashboardPage() {
   const { usuario, tienePermiso } = useAuth()
+  const { toast } = useToast()
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  const stats = [
+  useEffect(() => {
+    loadDashboardMetrics()
+  }, [])
+
+  const loadDashboardMetrics = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch('/api/reportes/dashboard_metrics/', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setMetrics(data)
+      } else {
+        console.error('Error al cargar métricas del dashboard')
+        // Si Django no está disponible, mostrar datos de muestra
+        console.log('Django no disponible, mostrando datos de muestra')
+        const mockData: DashboardMetrics = {
+          ventas_mes: {
+            valor: 125430.00,
+            formateado: 'Q 125,430.00',
+            cambio_porcentaje: 12.5,
+            cambio_formateado: '+12.5%',
+            tendencia: 'up' as const
+          },
+          ordenes_pendientes: {
+            valor: 23,
+            cambio: 3,
+            cambio_formateado: '+3',
+            tendencia: 'up' as const
+          },
+          productos_stock: {
+            valor: 1247,
+            formateado: '1,247',
+            cambio_porcentaje: -5.2,
+            cambio_formateado: '-5.2%',
+            tendencia: 'down' as const
+          },
+          alertas_activas: {
+            valor: 8,
+            cambio: 2,
+            cambio_formateado: '+2',
+            tendencia: 'up' as const
+          },
+          actividades_recientes: [
+            {
+              id: 'mock-1',
+              tipo: 'info',
+              titulo: 'Nueva Factura',
+              descripcion: 'Factura V-2024-001 - Constructora ABC',
+              monto: 'Q 2,450.00',
+              tiempo: 'Hace 5 minutos',
+              icono: 'receipt'
+            },
+            {
+              id: 'mock-2',
+              tipo: 'warning',
+              titulo: 'Orden Pendiente',
+              descripcion: 'Orden de producción - 500 unidades',
+              estado: 'En Proceso',
+              tiempo: 'Hace 15 minutos',
+              icono: 'factory'
+            },
+            {
+              id: 'mock-3',
+              tipo: 'danger',
+              titulo: 'Stock Bajo',
+              descripcion: 'Cemento UGC 50kg - Solo quedan 15 unidades',
+              empresa: 'Ferretería',
+              tiempo: 'Hace 30 minutos',
+              icono: 'alert-triangle'
+            }
+          ],
+          resumen_por_empresa: {
+            ferreteria: { ventas_mes: 85430.00, productos_stock: 850, alertas: 5 },
+            bloquera: { ordenes_pendientes: 23, productos_stock: 320, alertas: 2 },
+            piedrinera: { productos_stock: 77, alertas: 1 }
+          }
+        }
+        setMetrics(mockData)
+      }
+    } catch (error) {
+      console.error('Error de conexión:', error)
+      // Fallback a datos de muestra
+      const mockData: DashboardMetrics = {
+        ventas_mes: {
+          valor: 125430.00,
+          formateado: 'Q 125,430.00',
+          cambio_porcentaje: 12.5,
+          cambio_formateado: '+12.5%',
+          tendencia: 'up' as const
+        },
+        ordenes_pendientes: {
+          valor: 23,
+          cambio: 3,
+          cambio_formateado: '+3',
+          tendencia: 'up' as const
+        },
+        productos_stock: {
+          valor: 1247,
+          formateado: '1,247',
+          cambio_porcentaje: -5.2,
+          cambio_formateado: '-5.2%',
+          tendencia: 'down' as const
+        },
+        alertas_activas: {
+          valor: 8,
+          cambio: 2,
+          cambio_formateado: '+2',
+          tendencia: 'up' as const
+        },
+        actividades_recientes: [
+          {
+            id: 'mock-1',
+            tipo: 'info',
+            titulo: 'Nueva Factura',
+            descripcion: 'Factura V-2024-001 - Constructora ABC',
+            monto: 'Q 2,450.00',
+            tiempo: 'Hace 5 minutos',
+            icono: 'receipt'
+          },
+          {
+            id: 'mock-2',
+            tipo: 'warning',
+            titulo: 'Orden Pendiente',
+            descripcion: 'Orden de producción - 500 unidades',
+            estado: 'En Proceso',
+            tiempo: 'Hace 15 minutos',
+            icono: 'factory'
+          },
+          {
+            id: 'mock-3',
+            tipo: 'danger',
+            titulo: 'Stock Bajo',
+            descripcion: 'Cemento UGC 50kg - Solo quedan 15 unidades',
+            empresa: 'Ferretería',
+            tiempo: 'Hace 30 minutos',
+            icono: 'alert-triangle'
+          }
+        ],
+        resumen_por_empresa: {
+          ferreteria: { ventas_mes: 85430.00, productos_stock: 850, alertas: 5 },
+          bloquera: { ordenes_pendientes: 23, productos_stock: 320, alertas: 2 },
+          piedrinera: { productos_stock: 77, alertas: 1 }
+        }
+      }
+      setMetrics(mockData)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const stats = metrics ? [
     {
       title: "Ventas del Mes",
-      value: "Q 125,430",
-      change: "+12.5%",
+      value: metrics.ventas_mes.formateado,
+      change: metrics.ventas_mes.cambio_formateado,
       icon: DollarSign,
-      color: "text-green-600",
+      color: metrics.ventas_mes.tendencia === 'up' ? "text-green-600" : "text-red-600",
+      trendIcon: metrics.ventas_mes.tendencia === 'up' ? TrendingUp : TrendingDown,
     },
     {
       title: "Órdenes Pendientes",
-      value: "23",
-      change: "+3",
+      value: metrics.ordenes_pendientes.valor.toString(),
+      change: metrics.ordenes_pendientes.cambio_formateado,
       icon: ShoppingCart,
-      color: "text-blue-600",
+      color: metrics.ordenes_pendientes.tendencia === 'up' ? "text-blue-600" : "text-orange-600",
+      trendIcon: metrics.ordenes_pendientes.tendencia === 'up' ? TrendingUp : TrendingDown,
     },
     {
       title: "Productos en Stock",
-      value: "1,247",
-      change: "-5.2%",
+      value: metrics.productos_stock.formateado,
+      change: metrics.productos_stock.cambio_formateado,
       icon: Package,
-      color: "text-orange-600",
+      color: metrics.productos_stock.tendencia === 'up' ? "text-green-600" : "text-red-600",
+      trendIcon: metrics.productos_stock.tendencia === 'up' ? TrendingUp : TrendingDown,
     },
     {
       title: "Alertas Activas",
-      value: "8",
-      change: "+2",
+      value: metrics.alertas_activas.valor.toString(),
+      change: metrics.alertas_activas.cambio_formateado,
       icon: AlertTriangle,
-      color: "text-red-600",
+      color: metrics.alertas_activas.tendencia === 'up' ? "text-red-600" : "text-green-600",
+      trendIcon: metrics.alertas_activas.tendencia === 'up' ? TrendingUp : TrendingDown,
     },
-  ]
+  ] : []
 
   const modules = [
     {
@@ -146,21 +362,42 @@ export default function DashboardPage() {
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <Card key={stat.title}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-              <stat.icon className={`h-4 w-4 ${stat.color}`} />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stat.value}</div>
-              <p className="text-xs text-muted-foreground">
-                <span className={stat.change.startsWith("+") ? "text-green-600" : "text-red-600"}>{stat.change}</span>{" "}
-                desde el mes pasado
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+        {loading ? (
+          // Loading state
+          Array.from({ length: 4 }).map((_, index) => (
+            <Card key={index}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div className="h-4 bg-gray-200 rounded animate-pulse w-24"></div>
+                <div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div>
+              </CardHeader>
+              <CardContent>
+                <div className="h-8 bg-gray-200 rounded animate-pulse mb-2"></div>
+                <div className="h-3 bg-gray-200 rounded animate-pulse w-20"></div>
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          stats.map((stat) => (
+            <Card key={stat.title}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+                <div className="flex items-center gap-1">
+                  <stat.icon className={`h-4 w-4 ${stat.color}`} />
+                  {stat.trendIcon && <stat.trendIcon className={`h-3 w-3 ${stat.color}`} />}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stat.value}</div>
+                <p className="text-xs text-muted-foreground">
+                  <span className={stat.change.startsWith("+") ? "text-green-600" : "text-red-600"}>
+                    {stat.change}
+                  </span>{" "}
+                  desde el mes pasado
+                </p>
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
@@ -202,7 +439,62 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {recentActivity.map((activity) => (
+              {metrics?.actividades_recientes?.map((activity) => {
+                // Determinar colores según el tipo de actividad
+                const getActivityColors = (tipo: string) => {
+                  switch (tipo) {
+                    case 'danger':
+                      return {
+                        dot: 'bg-red-500',
+                        title: 'text-red-700',
+                        badge: 'bg-red-100 text-red-800'
+                      }
+                    case 'warning':
+                      return {
+                        dot: 'bg-yellow-500',
+                        title: 'text-yellow-700',
+                        badge: 'bg-yellow-100 text-yellow-800'
+                      }
+                    case 'info':
+                    default:
+                      return {
+                        dot: 'bg-blue-500',
+                        title: 'text-blue-700',
+                        badge: 'bg-blue-100 text-blue-800'
+                      }
+                  }
+                }
+
+                const colors = getActivityColors(activity.tipo)
+
+                return (
+                  <div key={activity.id} className="flex items-start space-x-3">
+                    <div className="flex-shrink-0">
+                      <div className={`w-2 h-2 ${colors.dot} rounded-full mt-2`}></div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className={`text-sm font-medium ${colors.title}`}>{activity.titulo}</p>
+                        {activity.empresa && (
+                          <Badge variant="secondary" className={`text-xs ${colors.badge}`}>
+                            {activity.empresa}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600">{activity.descripcion}</p>
+                      {activity.monto && (
+                        <p className="text-sm font-semibold text-green-600">{activity.monto}</p>
+                      )}
+                      {activity.estado && (
+                        <Badge variant="outline" className="text-xs mt-1">
+                          {activity.estado}
+                        </Badge>
+                      )}
+                      <p className="text-xs text-gray-400 mt-1">{activity.tiempo}</p>
+                    </div>
+                  </div>
+                )
+              }) || recentActivity.map((activity) => (
                 <div key={activity.id} className="flex items-start space-x-3">
                   <div className="flex-shrink-0">
                     <div className="w-2 h-2 bg-blue-600 rounded-full mt-2"></div>

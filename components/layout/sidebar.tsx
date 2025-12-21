@@ -35,12 +35,27 @@ const navigationItems = [
     icon: Package,
     modulo: ModuloSistema.FERRETERIA,
     items: [
-      { title: "Productos", url: "/ferreteria/productos" },
-      { title: "Inventario", url: "/ferreteria/inventario" },
-      { title: "Ventas", url: "/ferreteria/ventas" },
-      { title: "Cotizaciones", url: "/ferreteria/cotizaciones" },
-      { title: "Clientes", url: "/ferreteria/clientes" },
-      { title: "Cuentas por Cobrar", url: "/ferreteria/cuentas-por-cobrar" },
+      {
+        title: "🛒 Operación",
+        items: [
+          { title: "Realizar Venta (Generar Factura)", url: "/ferreteria/ventas" },
+          { title: "Generar Cotizaciones", url: "/ferreteria/cotizaciones" },
+        ],
+      },
+      {
+        title: "📦 Catálogo",
+        items: [
+          { title: "Registrar Productos de Ferreteria", url: "/ferreteria/productos" },
+          { title: "Administrar Inventario (Salidas y Entradas)", url: "/ferreteria/inventario" },
+        ],
+      },
+      {
+        title: "👥 Clientes",
+        items: [
+          { title: "Lista de Clientes", url: "/ferreteria/clientes" },
+          { title: "Cuentas por Cobrar para Empresa", url: "/ferreteria/cuentas-por-cobrar" },
+        ],
+      },
     ],
   },
   {
@@ -48,10 +63,19 @@ const navigationItems = [
     icon: Factory,
     modulo: ModuloSistema.BLOQUERA,
     items: [
-      { title: "Productos", url: "/bloquera/productos" },
-      { title: "Inventario", url: "/bloquera/inventario" },
-      { title: "Producción", url: "/bloquera/produccion" },
-      { title: "Órdenes", url: "/bloquera/ordenes" },
+      {
+        title: "📦 Catalogos y Existencias",
+        items: [
+          { title: "Registrar Productos de Bloquera", url: "/bloquera/productos" },
+          { title: "Administrar Inventario (Entradas y Salidas)", url: "/bloquera/inventario" },
+        ],
+      },
+      {
+        title: "🏗️ Producción",
+        items: [
+          { title: "Generar Ordenes de Producción de Bloquera", url: "/bloquera/ordenes" },
+        ],
+      },
     ],
   },
   {
@@ -59,12 +83,27 @@ const navigationItems = [
     icon: Truck,
     modulo: ModuloSistema.PIEDRINERA,
     items: [
-      { title: "Productos", url: "/piedrinera/productos" },
-      { title: "Inventario", url: "/piedrinera/inventario" },
-      { title: "Ventas", url: "/piedrinera/ventas" },
-      { title: "Producción", url: "/piedrinera/produccion" },
-      { title: "Camiones", url: "/piedrinera/camiones" },
-      { title: "Despachos", url: "/piedrinera/despachos" },
+      {
+        title: "🧱 Materiales",
+        items: [
+          { title: "Registrar Productos de Piedrinera", url: "/piedrinera/productos" },
+          { title: "Administrar Inventario (Entradas y Salidas)", url: "/piedrinera/inventario" },
+        ],
+      },
+      {
+        title: "⛏️ Operación",
+        items: [
+          { title: "Registrar Nueva Producción de Piedrinera", url: "/piedrinera/produccion" },
+          { title: "Realizar Venta de Producto de Piedrinera", url: "/piedrinera/ventas" },
+        ],
+      },
+      {
+        title: "🚛 Logística",
+        items: [
+          { title: "Registrar Camiones a usar en Piedrinera", url: "/piedrinera/camiones" },
+          { title: "Despachos de Camiones", url: "/piedrinera/despachos" },
+        ],
+      },
     ],
   },
   {
@@ -72,9 +111,24 @@ const navigationItems = [
     icon: Hammer,
     modulo: ModuloSistema.TALLER,
     items: [
-      { title: "Órdenes", url: "/taller/ordenes" },
-      { title: "Maquinaria", url: "/taller/maquinaria" },
-      { title: "Compra de Repuestos", url: "/taller/compra-repuestos" },
+      {
+        title: "🛠️ Operación",
+        items: [
+          { title: "Crear Orden de Mantenimiento", url: "/taller/ordenes" },
+        ],
+      },
+      {
+        title: "⚙️ Recursos",
+        items: [
+          { title: "Registro de Maquinaria de Empresa Framasa", url: "/taller/maquinaria" },
+        ],
+      },
+      {
+        title: "🧾 Externos",
+        items: [
+          { title: "Registro de Compra de Repuestos (no de Inventario)", url: "/taller/compra-repuestos" },
+        ],
+      },
     ],
   },
   {
@@ -82,9 +136,24 @@ const navigationItems = [
     icon: Users,
     modulo: ModuloSistema.PLANILLAS,
     items: [
-      { title: "Empleados", url: "/planillas/empleados" },
-      { title: "Asistencia", url: "/planillas/asistencias" },
-      { title: "Nómina", url: "/planillas/nominas" },
+      {
+        title: "👤 Personal",
+        items: [
+          { title: "Registro de Empleados", url: "/planillas/empleados" },
+        ],
+      },
+      {
+        title: "⏱️ Asistencia",
+        items: [
+          { title: "Registro de Asistencia de Empleados", url: "/planillas/asistencias" },
+        ],
+      },
+      {
+        title: "💰 Pagos",
+        items: [
+          { title: "Creación de Nóminas", url: "/planillas/nominas" },
+        ],
+      },
     ],
   },
   {
@@ -153,15 +222,40 @@ export function AppSidebar() {
                         </CollapsibleTrigger>
                         <CollapsibleContent>
                           <SidebarMenuSub>
-                            {item.items.map((subItem) => (
-                              <SidebarMenuSubItem key={subItem.url}>
-                                <SidebarMenuSubButton asChild isActive={pathname === subItem.url}>
-                                  <Link href={subItem.url}>
-                                    <span>{subItem.title}</span>
-                                  </Link>
-                                </SidebarMenuSubButton>
-                              </SidebarMenuSubItem>
-                            ))}
+                            {item.items.map((subItem: any) => {
+                              // Si el subItem tiene items anidados, es un subgrupo
+                              if ('items' in subItem && subItem.items) {
+                                return (
+                                  <div key={subItem.title} className="space-y-1">
+                                    <div className="px-3 py-2 text-xs font-semibold text-white border-l-2 border-white/20 ml-2">
+                                      {subItem.title}
+                                    </div>
+                                    <div className="ml-4 space-y-1">
+                                      {subItem.items.map((nestedItem: { title: string; url: string }) => (
+                                        <SidebarMenuSubItem key={nestedItem.url}>
+                                          <SidebarMenuSubButton asChild isActive={pathname === nestedItem.url}>
+                                            <Link href={nestedItem.url}>
+                                              <span>{nestedItem.title}</span>
+                                            </Link>
+                                          </SidebarMenuSubButton>
+                                        </SidebarMenuSubItem>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )
+                              }
+
+                              // Si no tiene items anidados, es un item normal
+                              return (
+                                <SidebarMenuSubItem key={subItem.url}>
+                                  <SidebarMenuSubButton asChild isActive={pathname === subItem.url}>
+                                    <Link href={subItem.url}>
+                                      <span>{subItem.title}</span>
+                                    </Link>
+                                  </SidebarMenuSubButton>
+                                </SidebarMenuSubItem>
+                              )
+                            })}
                           </SidebarMenuSub>
                         </CollapsibleContent>
                       </SidebarMenuItem>

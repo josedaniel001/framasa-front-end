@@ -84,6 +84,9 @@ export const API_ENDPOINTS = {
     get EMPLEADOS_STATS() {
       return nextApiEndpoint('/api/planillas/empleados/stats')
     },
+    get CARGOS() {
+      return nextApiEndpoint('/api/planillas/cargos')
+    },
     // Asistencias
     get ASISTENCIAS() {
       return nextApiEndpoint('/api/planillas/asistencias')
@@ -196,6 +199,9 @@ export const API_ENDPOINTS = {
     },
     get ESTADISTICAS_PREDICTIVAS() {
       return nextApiEndpoint('/api/reportes/estadisticas-predictivas')
+    },
+    get DASHBOARD_METRICS() {
+      return nextApiEndpoint('/api/reportes/dashboard_metrics')
     },
   },
   FACTURACION: {

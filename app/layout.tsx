@@ -3,10 +3,8 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { AuthProvider } from "@/contexts/auth-context"
-import { SessionProvider } from "@/contexts/session-context"
 import { MainLayout } from "@/components/layout/main-layout"
 import { Toaster } from "sonner"
-import { SessionInitializer } from "@/components/session-initializer"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -24,12 +22,9 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className={inter.className}>
-        <SessionProvider>
-          <SessionInitializer />
-          <AuthProvider>
-            <MainLayout>{children}</MainLayout>
-          </AuthProvider>
-        </SessionProvider>
+        <AuthProvider>
+          <MainLayout>{children}</MainLayout>
+        </AuthProvider>
         <Toaster position="top-right" richColors closeButton />
       </body>
     </html>
