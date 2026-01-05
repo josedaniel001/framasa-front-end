@@ -5,6 +5,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8000}
+        - NEXT_PUBLIC_NEXTJS_URL=${NEXT_PUBLIC_NEXTJS_URL:-http://localhost:3000}
     container_name: framasa-erp-app
     restart: unless-stopped
     ports:
@@ -13,11 +16,21 @@ services:
       - NODE_ENV=production
       - NEXT_TELEMETRY_DISABLED=1
       - PORT=3000
-      # Agregar aquí tus variables de entorno adicionales si las necesitas
-      # - DATABASE_URL=${DATABASE_URL}
-      # - API_URL=${API_URL}
+      # Variables de entorno de Next.js (build-time y runtime)
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8000}
+      - NEXT_PUBLIC_NEXTJS_URL=${NEXT_PUBLIC_NEXTJS_URL:-http://localhost:3000}
+      # Variable de entorno para runtime en el servidor (prioritaria en rutas API)
+      # IMPORTANTE: Esta variable permite configurar la URL de Django en runtime dentro del contenedor
+      - DJANGO_API_URL=${DJANGO_API_URL:-${NEXT_PUBLIC_API_URL:-http://127.0.0.1:8000}}
+      # Variables de base de datos (opcionales, solo para rutas API que aún consultan directamente DB)
+      - DB_HOST=${DB_HOST:-}
+      - DB_PORT=${DB_PORT:-}
+      - DB_NAME=${DB_NAME:-}
+      - DB_USER=${DB_USER:-}
+      - DB_PASSWORD=${DB_PASSWORD:-}
+      - DB_SSL=${DB_SSL:-false}
     volumes:
-      # Volumen para persistir datos si es necesario
+      # Volumen para persistir logs
       - ./logs:/app/logs
     networks:
       - framasa-network

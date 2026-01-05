@@ -28,32 +28,14 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
+import { 
+  getMovimientosCaja, 
+  getEstadisticasCaja, 
+  deleteMovimientoCaja,
+  type MovimientoCaja 
+} from "@/lib/api/caja"
 
 const ITEMS_PER_PAGE = 10
-
-interface MovimientoCaja {
-  id: number
-  tipo: 'ENTRADA' | 'SALIDA'
-  monto: number
-  descripcion: string
-  empresa: string
-  empresa_display: string
-  fecha: string
-  usuario: string
-  referencia?: string
-}
-
-interface MovimientoListResponse {
-  count: number
-  next: string | null
-  previous: string | null
-  results: MovimientoCaja[]
-  estadisticas: {
-    total_entradas: number
-    total_salidas: number
-    saldo_actual: number
-  }
-}
 
 export default function CajaPage() {
   const { toast } = useToast()
@@ -78,7 +60,7 @@ export default function CajaPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [movimientoToDelete, setMovimientoToDelete] = useState<MovimientoCaja | null>(null)
 
-  // Simular carga de datos (en producción esto vendría de una API)
+  // Cargar datos desde la API
   useEffect(() => {
     loadMovimientos()
   }, [currentPage, filters, searchTerm])
@@ -88,111 +70,46 @@ export default function CajaPage() {
       setLoading(true)
       setError(null)
 
-      // Simulación de datos - en producción esto vendría de la API
-      const mockData: MovimientoListResponse = {
-        count: 25,
-        next: null,
-        previous: null,
-        results: [
-          {
-            id: 1,
-            tipo: 'ENTRADA',
-            monto: 1500.00,
-            descripcion: 'Venta de materiales ferretería',
-            empresa: 'FERRETERIA',
-            empresa_display: 'Ferretería',
-            fecha: '2025-12-15T10:30:00Z',
-            usuario: 'Juan Pérez',
-            referencia: 'FAC-001'
-          },
-          {
-            id: 2,
-            tipo: 'SALIDA',
-            monto: 300.00,
-            descripcion: 'Pago de servicios eléctricos',
-            empresa: 'BLOQUERA',
-            empresa_display: 'Bloquera',
-            fecha: '2025-12-15T11:15:00Z',
-            usuario: 'María García',
-            referencia: 'REC-001'
-          },
-          {
-            id: 3,
-            tipo: 'ENTRADA',
-            monto: 2500.00,
-            descripcion: 'Venta de bloques',
-            empresa: 'BLOQUERA',
-            empresa_display: 'Bloquera',
-            fecha: '2025-12-15T14:20:00Z',
-            usuario: 'Carlos López',
-            referencia: 'FAC-002'
-          },
-          {
-            id: 4,
-            tipo: 'SALIDA',
-            monto: 450.00,
-            descripcion: 'Compra de insumos taller',
-            empresa: 'TALLER',
-            empresa_display: 'Taller',
-            fecha: '2025-12-15T16:45:00Z',
-            usuario: 'Ana Rodríguez',
-            referencia: 'COMP-001'
-          },
-          {
-            id: 5,
-            tipo: 'ENTRADA',
-            monto: 800.00,
-            descripcion: 'Venta de piedra triturada',
-            empresa: 'PIEDRINERA',
-            empresa_display: 'Piedrinera',
-            fecha: '2025-12-14T09:30:00Z',
-            usuario: 'Luis Martínez',
-            referencia: 'FAC-003'
-          }
-        ],
-        estadisticas: {
-          total_entradas: 48300.00,
-          total_salidas: 12500.00,
-          saldo_actual: 35800.00
-        }
+      // Construir parámetros de búsqueda
+      const params: any = {
+        page: currentPage,
       }
 
-      // Aplicar filtros
-      let filteredResults = mockData.results
-
       if (filters.tipo !== "todos") {
-        filteredResults = filteredResults.filter(m => m.tipo === filters.tipo)
+        params.tipo = filters.tipo
       }
 
       if (filters.empresa !== "todos") {
-        filteredResults = filteredResults.filter(m => m.empresa === filters.empresa)
+        params.empresa = filters.empresa
       }
 
       if (searchTerm) {
-        filteredResults = filteredResults.filter(m =>
-          m.descripcion.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          m.referencia?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          m.usuario.toLowerCase().includes(searchTerm.toLowerCase())
-        )
+        params.search = searchTerm
       }
 
+      // Cargar movimientos y estadísticas en paralelo
+      const [movimientosData, estadisticasData] = await Promise.all([
+        getMovimientosCaja(params),
+        getEstadisticasCaja({
+          empresa: filters.empresa !== "todos" ? filters.empresa : undefined,
+          fecha: filters.fecha || undefined,
+        })
+      ])
+
+      // Aplicar filtro de fecha en el frontend si está especificado
+      let filteredResults = movimientosData.results
       if (filters.fecha) {
         const filterDate = new Date(filters.fecha).toDateString()
         filteredResults = filteredResults.filter(m => {
-          const movimientoDate = new Date(m.fecha).toDateString()
+          const movimientoDate = new Date(m.fecha_hora).toDateString()
           return movimientoDate === filterDate
         })
       }
 
-      // Paginación
-      const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
-      const endIndex = startIndex + ITEMS_PER_PAGE
-      const paginatedResults = filteredResults.slice(startIndex, endIndex)
-
-      setMovimientos(paginatedResults)
-      setTotalCount(filteredResults.length)
-      setTotalPages(Math.ceil(filteredResults.length / ITEMS_PER_PAGE))
-      setEstadisticas(mockData.estadisticas)
+      setMovimientos(filteredResults)
+      setTotalCount(movimientosData.count)
+      setTotalPages(Math.ceil(movimientosData.count / ITEMS_PER_PAGE))
+      setEstadisticas(estadisticasData)
 
     } catch (err: any) {
       console.error("Error al cargar movimientos:", err)
@@ -256,6 +173,24 @@ export default function CajaPage() {
       hour: "2-digit",
       minute: "2-digit",
     })
+  }
+
+  const getEmpresaDisplay = (empresa: string) => {
+    const empresaMap: Record<string, string> = {
+      'Ferretería': 'Ferretería',
+      'Bloquera': 'Bloquera',
+      'Piedrinera': 'Piedrinera',
+      'Taller': 'Taller',
+    }
+    return empresaMap[empresa] || empresa
+  }
+
+  const getUsuarioDisplay = (createdById: number | null | undefined) => {
+    // Por ahora retornamos un placeholder, luego se puede obtener del usuario real
+    if (createdById) {
+      return `Usuario #${createdById}`
+    }
+    return "Sistema"
   }
 
   const formatMonto = (monto: number) => {
@@ -323,14 +258,11 @@ export default function CajaPage() {
     if (!movimientoToDelete) return
 
     try {
-      // Simulación de eliminación - en producción esto iría a la API
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      console.log("Eliminando movimiento:", movimientoToDelete.id)
+      await deleteMovimientoCaja(movimientoToDelete.id)
 
       toast({
         title: "Movimiento Eliminado",
-        description: `El movimiento de ${getTipoDisplay(movimientoToDelete.tipo)} por ${formatMonto(movimientoToDelete.monto)} ha sido eliminado exitosamente`,
+        description: `El movimiento de ${getTipoDisplay(movimientoToDelete.tipo)} por ${formatMonto(Number(movimientoToDelete.total))} ha sido eliminado exitosamente`,
       })
 
       // Recargar los movimientos
@@ -354,14 +286,9 @@ export default function CajaPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Caja</h1>
         <div className="flex gap-2">
-          <Link href="/caja/salidas/nueva">
-            <Button variant="outline">
-              <MinusCircle className="mr-2 h-4 w-4" /> Registrar Salida
-            </Button>
-          </Link>
-          <Link href="/caja/entradas/nueva">
+          <Link href="/caja/nuevo">
             <Button>
-              <PlusCircle className="mr-2 h-4 w-4" /> Registrar Entrada
+              <PlusCircle className="mr-2 h-4 w-4" /> Registrar Movimiento
             </Button>
           </Link>
         </div>
@@ -486,10 +413,10 @@ export default function CajaPage() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="todos">Todas</SelectItem>
-                            <SelectItem value="FERRETERIA">Ferretería</SelectItem>
-                            <SelectItem value="BLOQUERA">Bloquera</SelectItem>
-                            <SelectItem value="PIEDRINERA">Piedrinera</SelectItem>
-                            <SelectItem value="TALLER">Taller</SelectItem>
+                            <SelectItem value="Ferretería">Ferretería</SelectItem>
+                            <SelectItem value="Bloquera">Bloquera</SelectItem>
+                            <SelectItem value="Piedrinera">Piedrinera</SelectItem>
+                            <SelectItem value="Taller">Taller</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -594,22 +521,22 @@ export default function CajaPage() {
                 <TableBody>
                   {movimientos.map((movimiento) => (
                     <TableRow key={movimiento.id}>
-                      <TableCell>{formatFecha(movimiento.fecha)}</TableCell>
+                      <TableCell>{formatFecha(movimiento.fecha_hora)}</TableCell>
                       <TableCell>
                         <Badge variant={getTipoVariant(movimiento.tipo)}>
                           {getTipoDisplay(movimiento.tipo)}
                         </Badge>
                       </TableCell>
-                      <TableCell className="max-w-xs truncate" title={movimiento.descripcion}>
-                        {movimiento.descripcion}
+                      <TableCell className="max-w-xs truncate" title={movimiento.descripcion || ''}>
+                        {movimiento.descripcion || '-'}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{movimiento.empresa_display}</Badge>
+                        <Badge variant="outline">{getEmpresaDisplay(movimiento.empresa)}</Badge>
                       </TableCell>
                       <TableCell className={`font-medium ${movimiento.tipo === 'ENTRADA' ? 'text-green-600' : 'text-red-600'}`}>
-                        {movimiento.tipo === 'ENTRADA' ? '+' : '-'}{formatMonto(movimiento.monto)}
+                        {movimiento.tipo === 'ENTRADA' ? '+' : '-'}{formatMonto(Number(movimiento.total))}
                       </TableCell>
-                      <TableCell>{movimiento.usuario}</TableCell>
+                      <TableCell>{getUsuarioDisplay(movimiento.created_by_id)}</TableCell>
                       <TableCell>
                         {movimiento.referencia && (
                           <Badge variant="secondary">{movimiento.referencia}</Badge>
@@ -617,13 +544,13 @@ export default function CajaPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Link href={movimiento.tipo === 'ENTRADA' ? `/caja/entradas/${movimiento.id}` : `/caja/salidas/${movimiento.id}`}>
+                          <Link href={`/caja/${movimiento.id}`}>
                             <Button variant="outline" size="sm" aria-label="Ver detalle del movimiento">
                               <Eye className="h-4 w-4" />
                               <span className="sr-only">Ver</span>
                             </Button>
                           </Link>
-                          <Link href={movimiento.tipo === 'ENTRADA' ? `/caja/entradas/${movimiento.id}/editar` : `/caja/salidas/${movimiento.id}/editar`}>
+                          <Link href={`/caja/${movimiento.id}/editar`}>
                             <Button variant="outline" size="sm" aria-label="Editar movimiento">
                               <Edit className="h-4 w-4" />
                               <span className="sr-only">Editar</span>
@@ -661,8 +588,8 @@ export default function CajaPage() {
             <AlertDialogDescription>
               Esta acción no se puede deshacer. Se eliminará permanentemente el movimiento de{' '}
               <strong>{getTipoDisplay(movimientoToDelete?.tipo || '')}</strong> por{' '}
-              <strong>{formatMonto(movimientoToDelete?.monto || 0)}</strong> de la empresa{' '}
-              <strong>{movimientoToDelete?.empresa_display}</strong>.
+              <strong>{formatMonto(Number(movimientoToDelete?.total || 0))}</strong> de la empresa{' '}
+              <strong>{movimientoToDelete ? getEmpresaDisplay(movimientoToDelete.empresa) : ''}</strong>.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

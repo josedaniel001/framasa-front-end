@@ -123,3 +123,72 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Asegurar que el sidebar nunca exceda su ancho y no se sobreponga al contenido */
+@layer utilities {
+  [data-sidebar="sidebar"] {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+  
+  [data-sidebar="sidebar"] * {
+    box-sizing: border-box;
+  }
+  
+  /* Permitir que el texto en los submenús se muestre completo */
+  [data-sidebar="menu-sub-button"] {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+  
+  [data-sidebar="menu-sub-button"] > span {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+  
+  /* Cuando el sidebar está expandido, usar ancho completo */
+  .group[data-state="expanded"] [data-sidebar="sidebar"] {
+    max-width: var(--sidebar-width) !important;
+    width: var(--sidebar-width) !important;
+  }
+  
+  /* Cuando el sidebar está colapsado, usar ancho de icono */
+  .group[data-state="collapsed"][data-collapsible="icon"] [data-sidebar="sidebar"] {
+    max-width: var(--sidebar-width-icon) !important;
+    width: var(--sidebar-width-icon) !important;
+  }
+  
+  /* Asegurar que el contenido principal siempre tenga el margen correcto */
+  main[class*="SidebarInset"] {
+    transition: margin-left 300ms ease-in-out !important;
+  }
+  
+  /* Animación suave para el overlay */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes fadeOut {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  
+  .sidebar-overlay-enter {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+  
+  .sidebar-overlay-exit {
+    animation: fadeOut 0.3s ease-in-out;
+  }
+}

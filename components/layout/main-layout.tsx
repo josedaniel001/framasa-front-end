@@ -12,18 +12,16 @@ import { cn } from "@/lib/utils"
 function MainContent({ children }: { children: React.ReactNode }) {
   const { state, isMobile } = useSidebar()
   
-  // Calcular el margen izquierdo basado en el estado
-  const marginLeft = isMobile 
-    ? "0" 
-    : state === "expanded" 
-      ? "16rem" 
-      : "3rem"
-  
   return (
     <SidebarInset
-      className="md:transition-[margin-left] md:duration-200 md:ease-linear"
+      className="md:transition-[margin-left] md:duration-300 md:ease-in-out"
       style={{
-        marginLeft: isMobile ? undefined : marginLeft,
+        // Asegurar que el margen se aplique correctamente con transición suave
+        marginLeft: isMobile 
+          ? undefined 
+          : state === "expanded" 
+            ? "var(--sidebar-width)" 
+            : "var(--sidebar-width-icon)",
       }}
     >
       <AppHeader />
@@ -67,7 +65,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={true}>
       <AppSidebar />
       <MainContent>{children}</MainContent>
     </SidebarProvider>

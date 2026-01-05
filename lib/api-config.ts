@@ -1,235 +1,276 @@
 /**
  * Configuración de la API
- * Usa rutas API locales de Next.js que actúan como proxy a Django
+ * Todos los endpoints apuntan directamente a Django (localhost:8000/api)
+ * Lee las variables de entorno desde .env
  */
 
-// URL base de Django (solo para autenticación directa)
-// Usar 127.0.0.1 en lugar de localhost para evitar problemas con IPv6
-const DJANGO_API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
-
-// URL base para rutas API locales de Next.js
-// Se calcula dinámicamente para funcionar tanto en cliente como servidor
-export function getNextApiBase(): string {
-  if (typeof window !== 'undefined') {
-    return window.location.origin
+/**
+ * Obtiene la URL base de Django
+ * En el servidor (rutas API), usa DJANGO_API_URL que puede ser configurada en runtime
+ * En el cliente, usa NEXT_PUBLIC_API_URL que se embebe en el build
+ */
+function getDjangoApiBase(): string {
+  // En el servidor, preferir DJANGO_API_URL (puede ser configurada en runtime)
+  if (typeof window === 'undefined') {
+    return process.env.DJANGO_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
   }
-  return process.env.NEXT_PUBLIC_NEXTJS_URL || 'http://localhost:3000'
+  // En el cliente (navegador), SIEMPRE usar NEXT_PUBLIC_API_URL
+  // El navegador necesita una URL pública accesible, no una URL interna de Docker
+  const clientUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+  
+  // Log para debugging (solo en desarrollo)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔍 [API Config] URL de Django para cliente:', clientUrl)
+  }
+  
+  return clientUrl
 }
 
-// Helper para construir endpoints de Next.js API
-function nextApiEndpoint(path: string): string {
-  return `${getNextApiBase()}${path}`
+// URL base de Django
+// Esta constante se usa para todos los endpoints que apuntan directamente a Django
+const DJANGO_API_BASE = getDjangoApiBase()
+
+/**
+ * Obtiene la URL base de Django para uso en rutas API del servidor
+ * Esta función siempre prioriza DJANGO_API_URL sobre NEXT_PUBLIC_API_URL
+ * para permitir configuración en runtime dentro de contenedores Docker
+ */
+export function getDjangoApiUrl(): string {
+  // En el servidor, preferir DJANGO_API_URL que puede ser configurada en runtime
+  return process.env.DJANGO_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
+}
+
+// Helper para construir endpoints de Django directamente
+function djangoApiEndpoint(path: string): string {
+  // Remover el prefijo /api si ya existe en el path
+  const cleanPath = path.startsWith('/api/') ? path : `/api${path}`
+  // Asegurar que termine con /
+  const finalPath = cleanPath.endsWith('/') ? cleanPath : `${cleanPath}/`
+  return `${DJANGO_API_BASE}${finalPath}`
 }
 
 export const API_ENDPOINTS = {
   AUTH: {
-    // Autenticación sigue yendo directo a Django
-    LOGIN: `${DJANGO_API_BASE}/api/auth/login/`,
-    VERIFY: `${DJANGO_API_BASE}/api/auth/verify/`,
-    LOGOUT: `${DJANGO_API_BASE}/api/auth/logout/`,
+    // Autenticación va directo a Django
+    LOGIN: djangoApiEndpoint('/api/auth/login/'),
+    VERIFY: djangoApiEndpoint('/api/auth/verify/'),
+    LOGOUT: djangoApiEndpoint('/api/auth/logout/'),
   },
   FERRETERIA: {
-    // Rutas API locales que actúan como proxy a Django
-    // Se calculan dinámicamente para usar la URL correcta
+    // Todos los endpoints apuntan directamente a Django
     get PRODUCTOS() {
-      return nextApiEndpoint('/api/ferreteria/productos')
+      return djangoApiEndpoint('/api/ferreteria/productos/')
     },
-    PRODUCTOS_STATS: `${DJANGO_API_BASE}/api/ferreteria/productos/stats/`,
-    PRODUCTOS_CATEGORIAS: `${DJANGO_API_BASE}/api/ferreteria/productos/categorias/`,
+    PRODUCTOS_STATS: djangoApiEndpoint('/api/ferreteria/productos/stats/'),
+    PRODUCTOS_CATEGORIAS: djangoApiEndpoint('/api/ferreteria/productos/categorias/'),
     get CATEGORIAS() {
-      return nextApiEndpoint('/api/ferreteria/categorias')
+      return djangoApiEndpoint('/api/ferreteria/categorias/')
     },
     get UNIDADES_MEDIDA() {
-      return nextApiEndpoint('/api/ferreteria/unidades-medida')
+      return djangoApiEndpoint('/api/ferreteria/unidades-medida/')
     },
     get MOVIMIENTOS_INVENTARIO() {
-      return nextApiEndpoint('/api/ferreteria/movimientos-inventario')
+      return djangoApiEndpoint('/api/ferreteria/movimientos-inventario/')
     },
-    MOVIMIENTOS_INVENTARIO_STATS: `${DJANGO_API_BASE}/api/ferreteria/movimientos-inventario/stats/`,
+    MOVIMIENTOS_INVENTARIO_STATS: djangoApiEndpoint('/api/ferreteria/movimientos-inventario/stats/'),
     get CLIENTES() {
-      return nextApiEndpoint('/api/ferreteria/clientes')
+      return djangoApiEndpoint('/api/ferreteria/clientes/')
     },
     get CLIENTES_STATS() {
-      return nextApiEndpoint('/api/ferreteria/clientes/stats')
+      return djangoApiEndpoint('/api/ferreteria/clientes/stats/')
     },
     get PROVEEDORES() {
-      return nextApiEndpoint('/api/ferreteria/proveedores')
+      return djangoApiEndpoint('/api/ferreteria/proveedores/')
     },
   },
   BLOQUERA: {
     get PRODUCTOS() {
-      return nextApiEndpoint('/api/bloquera/productos')
+      return djangoApiEndpoint('/api/bloquera/productos/')
     },
-    PRODUCTOS_STATS: `${DJANGO_API_BASE}/api/bloquera/productos/stats/`,
+    PRODUCTOS_STATS: djangoApiEndpoint('/api/bloquera/productos/stats/'),
     get MOVIMIENTOS_INVENTARIO() {
-      return nextApiEndpoint('/api/bloquera/movimientos-inventario')
+      return djangoApiEndpoint('/api/bloquera/movimientos-inventario/')
     },
   },
   PIEDRINERA: {
     get PRODUCTOS() {
-      return nextApiEndpoint('/api/piedrinera/productos')
+      return djangoApiEndpoint('/api/piedrinera/productos/')
     },
-    PRODUCTOS_STATS: `${DJANGO_API_BASE}/api/piedrinera/productos/stats/`,
+    PRODUCTOS_STATS: djangoApiEndpoint('/api/piedrinera/productos/stats/'),
     get CAMIONES() {
-      return nextApiEndpoint('/api/piedrinera/camiones')
+      return djangoApiEndpoint('/api/piedrinera/camiones/')
     },
     get MOVIMIENTOS_INVENTARIO() {
-      return nextApiEndpoint('/api/piedrinera/movimientos-inventario')
+      return djangoApiEndpoint('/api/piedrinera/movimientos-inventario/')
     },
   },
   PLANILLAS: {
     get EMPLEADOS() {
-      return nextApiEndpoint('/api/planillas/empleados')
+      return djangoApiEndpoint('/api/planillas/empleados/')
     },
     get EMPLEADOS_STATS() {
-      return nextApiEndpoint('/api/planillas/empleados/stats')
+      return djangoApiEndpoint('/api/planillas/empleados/stats/')
     },
     get CARGOS() {
-      return nextApiEndpoint('/api/planillas/cargos')
+      return djangoApiEndpoint('/api/planillas/cargos/')
     },
     // Asistencias
     get ASISTENCIAS() {
-      return nextApiEndpoint('/api/planillas/asistencias')
+      return djangoApiEndpoint('/api/planillas/asistencias/')
     },
     ASISTENCIA(id: number | string) {
-      return `${nextApiEndpoint('/api/planillas/asistencias')}/${id}`
+      return djangoApiEndpoint(`/api/planillas/asistencias/${id}/`)
     },
     get ASISTENCIAS_STATS() {
-      return nextApiEndpoint('/api/planillas/asistencias/stats')
+      return djangoApiEndpoint('/api/planillas/asistencias/stats/')
     },
     ASISTENCIA_TOGGLE_ACTIVO(id: number | string) {
-      return `${nextApiEndpoint('/api/planillas/asistencias')}/${id}/toggle_activo`
+      return djangoApiEndpoint(`/api/planillas/asistencias/${id}/toggle_activo/`)
     },
     ASISTENCIA_MARCAR_SALIDA(id: number | string) {
-      return `${nextApiEndpoint('/api/planillas/asistencias')}/${id}/marcar_salida`
+      return djangoApiEndpoint(`/api/planillas/asistencias/${id}/marcar_salida/`)
     },
     get EMPLEADOS_SIN_ASISTENCIA_HOY() {
-      return nextApiEndpoint('/api/planillas/asistencias/empleados_sin_asistencia_hoy')
+      return djangoApiEndpoint('/api/planillas/asistencias/empleados_sin_asistencia_hoy/')
     },
     // Nóminas
     get NOMINAS() {
-      return nextApiEndpoint('/api/planillas/nominas')
+      return djangoApiEndpoint('/api/planillas/nominas/')
     },
     NOMINA(id: number | string) {
-      return `${nextApiEndpoint('/api/planillas/nominas')}/${id}`
+      return djangoApiEndpoint(`/api/planillas/nominas/${id}/`)
     },
     get NOMINAS_STATS() {
-      return nextApiEndpoint('/api/planillas/nominas/stats')
+      return djangoApiEndpoint('/api/planillas/nominas/stats/')
     },
     NOMINA_RECALCULAR(id: number | string) {
-      return `${nextApiEndpoint('/api/planillas/nominas')}/${id}/recalcular`
+      return djangoApiEndpoint(`/api/planillas/nominas/${id}/recalcular/`)
     },
     NOMINA_CAMBIAR_ESTADO(id: number | string) {
-      return `${nextApiEndpoint('/api/planillas/nominas')}/${id}/cambiar_estado`
+      return djangoApiEndpoint(`/api/planillas/nominas/${id}/cambiar_estado/`)
     },
     NOMINA_TOGGLE_ACTIVO(id: number | string) {
-      return `${nextApiEndpoint('/api/planillas/nominas')}/${id}/toggle_activo`
+      return djangoApiEndpoint(`/api/planillas/nominas/${id}/toggle_activo/`)
     },
     // Detalle de Nóminas
     get NOMINAS_DETALLE() {
-      return nextApiEndpoint('/api/planillas/nominas-detalle')
+      return djangoApiEndpoint('/api/planillas/nominas-detalle/')
     },
     NOMINA_DETALLE(id: number | string) {
-      return `${nextApiEndpoint('/api/planillas/nominas-detalle')}/${id}`
+      return djangoApiEndpoint(`/api/planillas/nominas-detalle/${id}/`)
     },
     NOMINA_DETALLE_AJUSTAR(id: number | string) {
-      return `${nextApiEndpoint('/api/planillas/nominas-detalle')}/${id}/ajustar`
+      return djangoApiEndpoint(`/api/planillas/nominas-detalle/${id}/ajustar/`)
     },
     NOMINA_DETALLE_PAGAR(id: number | string) {
-      return `${nextApiEndpoint('/api/planillas/nominas-detalle')}/${id}/pagar`
+      return djangoApiEndpoint(`/api/planillas/nominas-detalle/${id}/pagar/`)
     },
     NOMINA_DETALLE_ANULAR(id: number | string) {
-      return `${nextApiEndpoint('/api/planillas/nominas-detalle')}/${id}/anular`
+      return djangoApiEndpoint(`/api/planillas/nominas-detalle/${id}/anular/`)
     },
     NOMINA_DETALLE_QUITAR_ANULACION(id: number | string) {
-      return `${nextApiEndpoint('/api/planillas/nominas-detalle')}/${id}/quitar_anulacion`
+      return djangoApiEndpoint(`/api/planillas/nominas-detalle/${id}/quitar_anulacion/`)
     },
   },
   TALLER: {
     get MAQUINARIA() {
-      return nextApiEndpoint('/api/taller/maquinaria')
+      return djangoApiEndpoint('/api/taller/maquinaria/')
     },
     MAQUINARIA_ITEM(id: number | string) {
-      return `${nextApiEndpoint('/api/taller/maquinaria')}/${id}`
+      return djangoApiEndpoint(`/api/taller/maquinaria/${id}/`)
     },
     get MAQUINARIA_TIPOS() {
-      return nextApiEndpoint('/api/taller/maquinaria/tipos')
+      return djangoApiEndpoint('/api/taller/maquinaria/tipos/')
     },
     get MAQUINARIA_EMPRESAS() {
-      return nextApiEndpoint('/api/taller/maquinaria/empresas')
+      return djangoApiEndpoint('/api/taller/maquinaria/empresas/')
     },
     // Órdenes de trabajo
     get ORDENES() {
-      return nextApiEndpoint('/api/taller/ordenes')
+      return djangoApiEndpoint('/api/taller/ordenes/')
     },
     ORDEN(id: number | string) {
-      return `${nextApiEndpoint('/api/taller/ordenes')}/${id}`
+      return djangoApiEndpoint(`/api/taller/ordenes/${id}/`)
     },
     ORDEN_CAMBIAR_ESTADO(id: number | string) {
-      return `${nextApiEndpoint('/api/taller/ordenes')}/${id}/cambiar_estado`
+      return djangoApiEndpoint(`/api/taller/ordenes/${id}/cambiar_estado/`)
     },
     ORDEN_ACTUALIZAR_PROGRESO(id: number | string) {
-      return `${nextApiEndpoint('/api/taller/ordenes')}/${id}/actualizar_progreso`
+      return djangoApiEndpoint(`/api/taller/ordenes/${id}/actualizar_progreso/`)
     },
     ORDEN_DESACTIVAR(id: number | string) {
-      return `${nextApiEndpoint('/api/taller/ordenes')}/${id}/desactivar`
+      return djangoApiEndpoint(`/api/taller/ordenes/${id}/desactivar/`)
     },
     ORDEN_ACTIVAR(id: number | string) {
-      return `${nextApiEndpoint('/api/taller/ordenes')}/${id}/activar`
+      return djangoApiEndpoint(`/api/taller/ordenes/${id}/activar/`)
     },
     get ORDENES_ESTADISTICAS() {
-      return nextApiEndpoint('/api/taller/ordenes/estadisticas')
+      return djangoApiEndpoint('/api/taller/ordenes/estadisticas/')
     },
     get ORDENES_TIPOS_MANTENIMIENTO() {
-      return nextApiEndpoint('/api/taller/ordenes/tipos_mantenimiento')
+      return djangoApiEndpoint('/api/taller/ordenes/tipos_mantenimiento/')
     },
     get ORDENES_PRIORIDADES() {
-      return nextApiEndpoint('/api/taller/ordenes/prioridades')
+      return djangoApiEndpoint('/api/taller/ordenes/prioridades/')
     },
     get ORDENES_ESTADOS() {
-      return nextApiEndpoint('/api/taller/ordenes/estados')
+      return djangoApiEndpoint('/api/taller/ordenes/estados/')
     },
   },
   REPORTES: {
     get INVENTARIO_UNIFICADO() {
-      return nextApiEndpoint('/api/reportes/inventario-unificado')
+      return djangoApiEndpoint('/api/reportes/inventario_unificado/')
     },
     get TOP_PRODUCTOS_VENDIDOS() {
-      return nextApiEndpoint('/api/reportes/top-productos-vendidos')
+      return djangoApiEndpoint('/api/reportes/top_productos_vendidos/')
     },
     get ESTADISTICAS_PREDICTIVAS() {
-      return nextApiEndpoint('/api/reportes/estadisticas-predictivas')
+      return djangoApiEndpoint('/api/reportes/estadisticas_predictivas/')
     },
     get DASHBOARD_METRICS() {
-      return nextApiEndpoint('/api/reportes/dashboard_metrics')
+      return djangoApiEndpoint('/api/reportes/dashboard_metrics/')
     },
   },
   FACTURACION: {
     get FACTURAS() {
-      return nextApiEndpoint('/api/facturacion/facturas')
+      return djangoApiEndpoint('/api/facturacion/facturas/')
     },
     FACTURA(id: number | string) {
-      return `${nextApiEndpoint('/api/facturacion/facturas')}/${id}`
+      return djangoApiEndpoint(`/api/facturacion/facturas/${id}/`)
     },
     FACTURA_AGREGAR_PAGOS_MULTIPLES(id: number | string) {
-      return `${nextApiEndpoint('/api/facturacion/facturas')}/${id}/agregar-pagos-multiples`
+      return djangoApiEndpoint(`/api/facturacion/facturas/${id}/agregar-pagos-multiples/`)
     },
     FACTURA_ANULAR(id: number | string) {
-      return `${DJANGO_API_BASE}/api/facturacion/facturas/${id}/anular/`
+      return djangoApiEndpoint(`/api/facturacion/facturas/${id}/anular/`)
     },
     get FACTURAS_ESTADISTICAS() {
-      return nextApiEndpoint('/api/facturacion/facturas/estadisticas')
+      return djangoApiEndpoint('/api/facturacion/facturas/estadisticas/')
     },
-    PAGOS: nextApiEndpoint('/api/facturacion/pagos'),
-    PAGO: (id: string | number) => nextApiEndpoint(`/api/facturacion/pagos/${id}`),
+    PAGOS: djangoApiEndpoint('/api/facturacion/pagos/'),
+    PAGO: (id: string | number) => djangoApiEndpoint(`/api/facturacion/pagos/${id}/`),
     get COTIZACIONES() {
-      return nextApiEndpoint('/api/facturacion/cotizaciones')
+      return djangoApiEndpoint('/api/facturacion/cotizaciones/')
     },
-    COTIZACION: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}`),
-    COTIZACION_ENVIAR: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}/enviar`),
-    COTIZACION_ACEPTAR: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}/aceptar`),
-    COTIZACION_RECHAZAR: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}/rechazar`),
-    COTIZACION_CONVERTIR_FACTURA: (id: string | number) => nextApiEndpoint(`/api/facturacion/cotizaciones/${id}/convertir_a_factura`),
+    COTIZACION: (id: string | number) => djangoApiEndpoint(`/api/facturacion/cotizaciones/${id}/`),
+    COTIZACION_ENVIAR: (id: string | number) => djangoApiEndpoint(`/api/facturacion/cotizaciones/${id}/enviar/`),
+    COTIZACION_ACEPTAR: (id: string | number) => djangoApiEndpoint(`/api/facturacion/cotizaciones/${id}/aceptar/`),
+    COTIZACION_RECHAZAR: (id: string | number) => djangoApiEndpoint(`/api/facturacion/cotizaciones/${id}/rechazar/`),
+    COTIZACION_CONVERTIR_FACTURA: (id: string | number) => djangoApiEndpoint(`/api/facturacion/cotizaciones/${id}/convertir_a_factura/`),
+  },
+  CAJA: {
+    get MOVIMIENTOS() {
+      return djangoApiEndpoint('/api/caja/movimientos/')
+    },
+    MOVIMIENTO(id: number | string) {
+      return djangoApiEndpoint(`/api/caja/movimientos/${id}/`)
+    },
+    get DETALLES() {
+      return djangoApiEndpoint('/api/caja/detalles/')
+    },
+    DETALLE(id: number | string) {
+      return djangoApiEndpoint(`/api/caja/detalles/${id}/`)
+    },
   },
 }
 

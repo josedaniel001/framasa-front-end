@@ -109,13 +109,29 @@ docker push tu-usuario/framasa-erp:v1.0.0
 
 ## Variables de Entorno
 
-Ambos archivos docker-compose soportan las mismas variables:
+Ambos archivos docker-compose soportan las siguientes variables:
 
+### Variables de Docker
 - `PORT`: Puerto donde se expone la aplicación (default: 3000)
+- `DOCKER_IMAGE`: Imagen de Docker Hub para producción (solo docker-compose.prod.yml)
+
+### Variables de Next.js
 - `NODE_ENV`: Entorno de ejecución (production)
 - `NEXT_TELEMETRY_DISABLED`: Deshabilitar telemetría de Next.js
+- `NEXT_PUBLIC_API_URL`: URL base de la API Django (requerida, default: http://127.0.0.1:8000)
+- `NEXT_PUBLIC_NEXTJS_URL`: URL base de Next.js (default: http://localhost:3000)
 
-Para agregar más variables, edita los archivos `docker-compose.yml` y `docker-compose.prod.yml` en la sección `environment`.
+### Variables de Base de Datos (Opcionales)
+- `DB_HOST`: Host de PostgreSQL (solo para rutas API que consultan directamente DB)
+- `DB_PORT`: Puerto de PostgreSQL
+- `DB_NAME`: Nombre de la base de datos
+- `DB_USER`: Usuario de PostgreSQL
+- `DB_PASSWORD`: Contraseña de PostgreSQL
+- `DB_SSL`: Usar SSL para conexión (true/false)
+
+**Nota:** Para más detalles sobre las variables de entorno, consulta el archivo `env.example`.
+
+Para configurar estas variables, crea un archivo `.env` basándote en `env.example`.
 
 ## Volúmenes
 

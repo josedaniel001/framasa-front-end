@@ -94,9 +94,14 @@ export default function DashboardPage() {
         const data = await response.json()
         setMetrics(data)
       } else {
-        console.error('Error al cargar métricas del dashboard')
+        const errorData = await response.json().catch(() => ({}))
+        console.error('❌ [Dashboard] Error al cargar métricas:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData,
+        })
         // Si Django no está disponible, mostrar datos de muestra
-        console.log('Django no disponible, mostrando datos de muestra')
+        console.warn('⚠️ [Dashboard] Django no disponible, mostrando datos de muestra')
         const mockData: DashboardMetrics = {
           ventas_mes: {
             valor: 125430.00,

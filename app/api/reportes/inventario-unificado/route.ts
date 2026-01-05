@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractTokenFromHeader, verifyTokenWithDjango } from '@/lib/verify-token-django'
-
-const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
+import { getDjangoApiUrl } from '@/lib/api-config'
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,6 +21,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
     }
 
+    const DJANGO_API_URL = getDjangoApiUrl()
     console.log('🔄 [API Route - Inventario Unificado] Haciendo request a Django:', `${DJANGO_API_URL}/api/reportes/inventario_unificado/`)
     const response = await fetch(`${DJANGO_API_URL}/api/reportes/inventario_unificado/`, {
       method: 'GET',

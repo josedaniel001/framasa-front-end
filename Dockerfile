@@ -19,7 +19,11 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Variables de entorno para el build (pueden ser sobrescritas)
+# Variables de entorno para el build (ARGs para poder sobrescribirlas)
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_NEXTJS_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_PUBLIC_NEXTJS_URL=${NEXT_PUBLIC_NEXTJS_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Build de la aplicación
@@ -37,7 +41,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Instalar wget para healthcheck
-RUN apk add --no-cache wget
+RUN apk add --no-cache wget curl
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
@@ -53,6 +57,10 @@ EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+
+# Healthcheck mejorado
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-3000}/ || exit 1
 
 CMD ["node", "server.js"]
 

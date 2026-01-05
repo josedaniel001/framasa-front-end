@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractTokenFromHeader, verifyTokenWithDjango } from '@/lib/verify-token-django'
+import { getDjangoApiUrl } from '@/lib/api-config'
 
-// Usar 127.0.0.1 en lugar de localhost para evitar problemas con IPv6
-const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
+// Obtener URL de Django (prioriza DJANGO_API_URL en runtime sobre NEXT_PUBLIC_API_URL)
+const DJANGO_API_URL = getDjangoApiUrl()
 
 /**
  * GET /api/ferreteria/productos/[id]

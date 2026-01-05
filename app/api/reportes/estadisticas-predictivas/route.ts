@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractTokenFromHeader, verifyTokenWithDjango } from '@/lib/verify-token-django'
-
-const DJANGO_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
+import { getDjangoApiUrl } from '@/lib/api-config'
 
 export async function GET(request: NextRequest) {
   try {
@@ -27,6 +26,7 @@ export async function GET(request: NextRequest) {
     params.append('empresa', empresa)
     params.append('dias_analisis', diasAnalisis)
 
+    const DJANGO_API_URL = getDjangoApiUrl()
     const response = await fetch(`${DJANGO_API_URL}/api/reportes/estadisticas_predictivas/?${params.toString()}`, {
       method: 'GET',
       headers: {

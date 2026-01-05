@@ -7,14 +7,37 @@ import { API_ENDPOINTS } from '@/lib/api-config'
 import type { Usuario } from '@/types/database'
 
 /**
+ * Obtiene la URL base de Django para uso en el servidor
+ * Prioriza DJANGO_API_URL (runtime) sobre NEXT_PUBLIC_API_URL (build-time)
+ */
+function getDjangoApiUrl(): string {
+  // En el servidor, preferir DJANGO_API_URL que puede ser configurada en runtime
+  if (typeof window === 'undefined') {
+    return process.env.DJANGO_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
+  }
+  // En el cliente, usar NEXT_PUBLIC_API_URL
+  return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
+}
+
+/**
  * Verifica un token JWT con el backend Django
  * @param token - Token JWT a verificar
  * @returns Usuario si el token es válido, null en caso contrario
  */
 export async function verifyTokenWithDjango(token: string): Promise<Usuario | null> {
   try {
-    console.log('🔍 [verifyTokenWithDjango] Verificando token con Django en:', API_ENDPOINTS.AUTH.VERIFY)
-    const response = await fetch(API_ENDPOINTS.AUTH.VERIFY, {
+    // Obtener URL dinámicamente (prioriza variables de entorno de runtime)
+    const djangoApiUrl = getDjangoApiUrl()
+    const verifyUrl = `${djangoApiUrl}/api/auth/verify/`
+    
+    console.log('🔍 [verifyTokenWithDjango] Verificando token con Django en:', verifyUrl)
+    console.log('🔍 [verifyTokenWithDjango] Variables de entorno:', {
+      DJANGO_API_URL: process.env.DJANGO_API_URL,
+      NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+      resolved: djangoApiUrl,
+    })
+    
+    const response = await fetch(verifyUrl, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,

@@ -14,11 +14,26 @@ function getAuthToken(): string | null {
 
 /**
  * Verifica si el error es por sesión expirada (401 Unauthorized)
- * FUNCIONALIDAD DESHABILITADA - Django maneja la expiración de sesión
+ * Si es un 401, limpia la sesión y redirige al login
  */
 function handleUnauthorizedError(status: number, errorData?: any): boolean {
-  // La funcionalidad de sesión expirada del frontend ha sido removida
-  // Django debe manejar la expiración de tokens por su cuenta
+  if (status === 401) {
+    console.warn('⚠️ [API Client] Token inválido o expirado (401). Limpiando sesión...')
+    
+    // Limpiar localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem("token")
+      localStorage.removeItem("refresh_token")
+      localStorage.removeItem("usuario")
+      
+      // Redirigir al login después de un pequeño delay
+      setTimeout(() => {
+        window.location.href = '/login'
+      }, 100)
+    }
+    
+    return true
+  }
   return false
 }
 
