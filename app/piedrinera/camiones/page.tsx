@@ -50,10 +50,35 @@ export default function CamionesPiedrineraPage() {
         setLoading(true)
         setError(null)
 
-        const camionesResult = await apiGet<Camion[]>(API_ENDPOINTS.PIEDRINERA.CAMIONES)
+        const camionesResponse = await apiGet<any>(API_ENDPOINTS.PIEDRINERA.CAMIONES)
+        
+        // Manejar diferentes formatos de respuesta
+        let camionesData: any[] = []
+        if (Array.isArray(camionesResponse)) {
+          camionesData = camionesResponse
+        } else if (camionesResponse && Array.isArray(camionesResponse.results)) {
+          camionesData = camionesResponse.results
+        } else if (camionesResponse && camionesResponse.data && Array.isArray(camionesResponse.data)) {
+          camionesData = camionesResponse.data
+        }
+        
+        // Mapear datos del backend al formato del frontend
+        const mappedCamiones: Camion[] = camionesData.map((camion: any) => ({
+          id: String(camion.id || camion.pk || ''),
+          placa: camion.placa || '',
+          marca: camion.marca || '',
+          modelo: camion.modelo || '',
+          capacidadMetrosCubicos: Number(camion.capacidadMetrosCubicos ?? camion.capacidad_m3 ?? 0) || 0,
+          estado: camion.estado ?? camion.estado_actual ?? 'Desconocido',
+          proximoMantenimiento: camion.proximoMantenimiento ?? camion.fecha_proximo_mantenimiento ?? '',
+          seguroVigente: camion.seguroVigente ?? camion.seguro_vigente ?? true,
+          revisionTecnicaVigente: camion.revisionTecnicaVigente ?? camion.revision_tecnica_vigente ?? true,
+          documentacionVigente: camion.documentacionVigente ?? camion.documentacion_vigente ?? true,
+          activo: camion.activo !== undefined ? camion.activo : true,
+        }))
 
-        setCamiones(camionesResult)
-        setAllCamiones(camionesResult)
+        setCamiones(mappedCamiones)
+        setAllCamiones(mappedCamiones)
       } catch (err: any) {
         console.error('Error en loadInitialData:', err)
         setError(err.message || 'Error al cargar los datos')

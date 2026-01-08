@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, use } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -28,71 +28,112 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { getSampleOrdenesProduccionBloquera, getSampleProductosBloquera } from "@/lib/sample-data"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Edit, Printer, Package, Trash2 } from "lucide-react"
+import { ArrowLeft, Edit, Printer, Package, Trash2, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet, apiPost, apiDelete } from "@/lib/api-client"
 
 interface OrdenDetallePageProps {
-  params: {
-    id: string
-  }
+  params: Promise<{ id: string }>
 }
 
 interface LoteProduccion {
   id: string
   ordenId: string
+  ordenCodigo: string
   fechaProduccion: string
+  fecha_lote: string
+  horaInicio: string
+  hora_inicio: string
+  horaFin: string
+  hora_fin: string
   cantidadProducida: number
+  cantidad_producida: number
   cantidadDefectuosa: number
+  cantidad_defectuosa: number
   calidad: string
+  calidadDisplay: string
   supervisor: string
   notas?: string
 }
 
+interface OrdenProduccion {
+  id: string
+  codigo: string
+  productoId: string
+  nombreProducto: string
+  cantidadSolicitada: number
+  cantidadProducida: number
+  cantidad_producida_total: number
+  fechaInicio: string
+  fecha_inicio: string
+  fechaFinEstimada?: string
+  fecha_fin_estimada?: string
+  fechaCreacion: string
+  estado: string
+  estadoDisplay: string
+  responsable?: string
+  supervisor?: string
+  notas?: string
+  lotes: LoteProduccion[]
+  lotes_produccion: LoteProduccion[]
+  progreso: number
+}
+
 export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
+  const { id } = use(params)
   const router = useRouter()
   const { toast } = useToast()
-  const ordenes = getSampleOrdenesProduccionBloquera()
-  const productos = getSampleProductosBloquera()
-  const orden = ordenes.find((o) => o.id === params.id)
-
+  const [loading, setLoading] = useState(true)
+  const [orden, setOrden] = useState<OrdenProduccion | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [loteToDelete, setLoteToDelete] = useState<any>(null)
+  const [loteToDelete, setLoteToDelete] = useState<LoteProduccion | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const [loteForm, setLoteForm] = useState({
     fechaProduccion: new Date().toISOString().split('T')[0],
     horaInicio: '',
     horaFin: '',
     cantidadProducida: '',
-    cantidadDefectuosa: '',
+    cantidadDefectuosa: '0',
     calidad: '',
     supervisor: '',
     notas: '',
   })
 
-  if (!orden) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-4">
-        <h1 className="text-3xl font-bold">Orden de Producción no encontrada</h1>
-        <p className="text-muted-foreground">La orden con ID {params.id} no existe.</p>
-        <Button onClick={() => router.back()}>Volver a Órdenes</Button>
-      </div>
-    )
-  }
+  useEffect(() => {
+    loadOrden()
+  }, [id])
 
-  const productoInfo = productos.find((p) => p.id === orden.productoId)
+  const loadOrden = async () => {
+    try {
+      setLoading(true)
+      const data = await apiGet<OrdenProduccion>(API_ENDPOINTS.BLOQUERA.ORDENES_PRODUCCION + `${id}/`)
+      setOrden(data)
+    } catch (error: any) {
+      console.error("Error al cargar orden:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo cargar la orden de producción",
+        variant: "destructive",
+      })
+      router.push("/bloquera/ordenes")
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const getStatusVariant = (status: string) => {
     switch (status) {
-      case "Completada":
+      case "COMPLETADA":
         return "default"
-      case "En Proceso":
+      case "EN_PROCESO":
         return "secondary"
-      case "Pendiente":
+      case "PENDIENTE":
         return "outline"
-      case "Cancelada":
+      case "CANCELADA":
         return "destructive"
       default:
         return "outline"
@@ -101,13 +142,13 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
 
   const getQualityVariant = (quality: string) => {
     switch (quality) {
-      case "Excelente":
+      case "EXCELENTE":
         return "default"
-      case "Buena":
+      case "BUENA":
         return "secondary"
-      case "Regular":
-        return "secondary" // Using secondary for regular quality
-      case "Mala":
+      case "REGULAR":
+        return "secondary"
+      case "MALA":
         return "destructive"
       default:
         return "outline"
@@ -122,6 +163,8 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
   }
 
   const handleRegistrarLote = async () => {
+    if (!orden) return
+
     // Validaciones
     if (!loteForm.fechaProduccion) {
       toast({
@@ -169,28 +212,25 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
     }
 
     try {
-      // Simulación de API call - en producción esto iría a la API real
-      const nuevoLote = {
-        id: `lote-${Date.now()}`,
-        ordenId: orden.id,
-        fechaProduccion: loteForm.fechaProduccion,
-        horaInicio: loteForm.horaInicio,
-        horaFin: loteForm.horaFin,
-        cantidadProducida: parseInt(loteForm.cantidadProducida),
-        cantidadDefectuosa: parseInt(loteForm.cantidadDefectuosa) || 0,
+      setSubmitting(true)
+
+      const loteData = {
+        orden: orden.id,
+        fecha_lote: loteForm.fechaProduccion,
+        hora_inicio: loteForm.horaInicio,
+        hora_fin: loteForm.horaFin,
+        cantidad_producida: parseInt(loteForm.cantidadProducida),
+        cantidad_defectuosa: parseInt(loteForm.cantidadDefectuosa) || 0,
         calidad: loteForm.calidad,
         supervisor: loteForm.supervisor.trim(),
-        notas: loteForm.notas.trim() || undefined,
+        notas: loteForm.notas.trim() || null,
       }
 
-      // Simular delay de API
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      console.log("Nuevo lote registrado:", nuevoLote)
+      await apiPost(API_ENDPOINTS.BLOQUERA.LOTES_PRODUCCION, loteData)
 
       toast({
         title: "Lote Registrado",
-        description: `Lote de ${nuevoLote.cantidadProducida} unidades registrado exitosamente`,
+        description: `Lote de ${loteData.cantidad_producida} unidades registrado exitosamente`,
       })
 
       // Resetear formulario y cerrar modal
@@ -199,15 +239,15 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
         horaInicio: '',
         horaFin: '',
         cantidadProducida: '',
-        cantidadDefectuosa: '',
+        cantidadDefectuosa: '0',
         calidad: '',
         supervisor: '',
         notas: '',
       })
       setModalOpen(false)
 
-      // Recargar la página para mostrar el nuevo lote
-      window.location.reload()
+      // Recargar la orden para mostrar el nuevo lote
+      loadOrden()
 
     } catch (error: any) {
       console.error("Error al registrar lote:", error)
@@ -216,10 +256,12 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
         description: error.message || "No se pudo registrar el lote",
         variant: "destructive",
       })
+    } finally {
+      setSubmitting(false)
     }
   }
 
-  const handleDeleteLote = (lote: any) => {
+  const handleDeleteLote = (lote: LoteProduccion) => {
     setLoteToDelete(lote)
     setDeleteDialogOpen(true)
   }
@@ -228,18 +270,15 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
     if (!loteToDelete) return
 
     try {
-      // Simulación de eliminación - en producción esto iría a la API real
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      console.log("Eliminando lote:", loteToDelete.id)
+      await apiDelete(API_ENDPOINTS.BLOQUERA.LOTES_PRODUCCION + `${loteToDelete.id}/`)
 
       toast({
         title: "Lote Eliminado",
-        description: `El lote de ${loteToDelete.cantidadProducida} unidades ha sido eliminado exitosamente`,
+        description: `El lote de ${loteToDelete.cantidadProducida || loteToDelete.cantidad_producida} unidades ha sido eliminado exitosamente`,
       })
 
-      // Recargar la página para actualizar la lista
-      window.location.reload()
+      // Recargar la orden para actualizar la lista
+      loadOrden()
 
     } catch (error: any) {
       console.error("Error al eliminar lote:", error)
@@ -254,7 +293,25 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
     }
   }
 
-  // Verificar si hay excedente
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (!orden) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4">
+        <h1 className="text-3xl font-bold">Orden de Producción no encontrada</h1>
+        <p className="text-muted-foreground">La orden con ID {id} no existe.</p>
+        <Button onClick={() => router.back()}>Volver a Órdenes</Button>
+      </div>
+    )
+  }
+
+  const lotes = orden.lotes || orden.lotes_produccion || []
   const tieneExcedente = orden.cantidadProducida > orden.cantidadSolicitada
   const excedente = tieneExcedente ? orden.cantidadProducida - orden.cantidadSolicitada : 0
 
@@ -271,7 +328,7 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
               <Edit className="mr-2 h-4 w-4" /> Editar
             </Button>
           </Link>
-          <Button>
+          <Button onClick={() => window.print()}>
             <Printer className="mr-2 h-4 w-4" /> Imprimir
           </Button>
         </div>
@@ -297,15 +354,17 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Cantidad Producida:</span>
-              <span className="font-medium">{orden.cantidadProducida} unidades</span>
+              <span className="font-medium">{orden.cantidadProducida || orden.cantidad_producida_total || 0} unidades</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Estado:</span>
-              <Badge variant={getStatusVariant(orden.estado)}>{orden.estado}</Badge>
+              <Badge variant={getStatusVariant(orden.estado)}>
+                {orden.estadoDisplay || orden.estado}
+              </Badge>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Responsable:</span>
-              <span className="font-medium">{orden.responsable}</span>
+              <span className="font-medium">{orden.responsable || orden.supervisor || "N/A"}</span>
             </div>
           </CardContent>
         </Card>
@@ -317,15 +376,21 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
           <CardContent className="grid gap-2">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Fecha de Creación:</span>
-              <span className="font-medium">{orden.fechaCreacion}</span>
+              <span className="font-medium">
+                {new Date(orden.fechaCreacion || orden.createdAt || Date.now()).toLocaleDateString("es-GT")}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Fecha de Inicio:</span>
-              <span className="font-medium">{orden.fechaInicio || "N/A"}</span>
+              <span className="font-medium">
+                {orden.fechaInicio || orden.fecha_inicio ? new Date(orden.fechaInicio || orden.fecha_inicio).toLocaleDateString("es-GT") : "N/A"}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Fecha Fin Estimada:</span>
-              <span className="font-medium">{orden.fechaFinEstimada || "N/A"}</span>
+              <span className="font-medium">
+                {orden.fechaFinEstimada || orden.fecha_fin_estimada ? new Date(orden.fechaFinEstimada || orden.fecha_fin_estimada).toLocaleDateString("es-GT") : "N/A"}
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -344,7 +409,7 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
                   ⚠️ Excedente de Producción
                 </div>
                 <div className="text-amber-700 text-sm">
-                  Se han producido {excedente} unidades más de las solicitadas ({orden.cantidadProducida} / {orden.cantidadSolicitada})
+                  Se han producido {excedente} unidades más de las solicitadas ({orden.cantidadProducida || orden.cantidad_producida_total || 0} / {orden.cantidadSolicitada})
                 </div>
               </div>
             )}
@@ -450,10 +515,10 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
                         <SelectValue placeholder="Selecciona la calidad" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Excelente">Excelente</SelectItem>
-                        <SelectItem value="Buena">Buena</SelectItem>
-                        <SelectItem value="Regular">Regular</SelectItem>
-                        <SelectItem value="Mala">Mala</SelectItem>
+                        <SelectItem value="EXCELENTE">Excelente</SelectItem>
+                        <SelectItem value="BUENA">Buena</SelectItem>
+                        <SelectItem value="REGULAR">Regular</SelectItem>
+                        <SelectItem value="MALA">Mala</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -471,10 +536,11 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
                 </div>
 
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setModalOpen(false)}>
+                  <Button variant="outline" onClick={() => setModalOpen(false)} disabled={submitting}>
                     Cancelar
                   </Button>
-                  <Button onClick={handleRegistrarLote}>
+                  <Button onClick={handleRegistrarLote} disabled={submitting}>
+                    {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Registrar Lote
                   </Button>
                 </DialogFooter>
@@ -483,7 +549,7 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
           </div>
         </CardHeader>
         <CardContent>
-          {orden.lotes.length > 0 ? (
+          {lotes.length > 0 ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -499,15 +565,19 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {orden.lotes.map((lote: any) => (
+                {lotes.map((lote: LoteProduccion) => (
                   <TableRow key={lote.id}>
-                    <TableCell className="font-medium">{lote.fechaProduccion}</TableCell>
-                    <TableCell>{lote.horaInicio || "N/A"}</TableCell>
-                    <TableCell>{lote.horaFin || "N/A"}</TableCell>
-                    <TableCell>{lote.cantidadProducida}</TableCell>
-                    <TableCell>{lote.cantidadDefectuosa}</TableCell>
+                    <TableCell className="font-medium">
+                      {new Date(lote.fechaProduccion || lote.fecha_lote).toLocaleDateString("es-GT")}
+                    </TableCell>
+                    <TableCell>{lote.horaInicio || lote.hora_inicio || "N/A"}</TableCell>
+                    <TableCell>{lote.horaFin || lote.hora_fin || "N/A"}</TableCell>
+                    <TableCell>{lote.cantidadProducida || lote.cantidad_producida}</TableCell>
+                    <TableCell>{lote.cantidadDefectuosa || lote.cantidad_defectuosa || 0}</TableCell>
                     <TableCell>
-                      <Badge variant={getQualityVariant(lote.calidad)}>{lote.calidad}</Badge>
+                      <Badge variant={getQualityVariant(lote.calidad)}>
+                        {lote.calidadDisplay || lote.calidad}
+                      </Badge>
                     </TableCell>
                     <TableCell>{lote.supervisor}</TableCell>
                     <TableCell className="text-muted-foreground">{lote.notas || "N/A"}</TableCell>
@@ -539,8 +609,8 @@ export default function OrdenDetallePage({ params }: OrdenDetallePageProps) {
             <AlertDialogTitle>¿Estás seguro de eliminar este lote?</AlertDialogTitle>
             <AlertDialogDescription>
               Esta acción no se puede deshacer. Se eliminará permanentemente el lote de producción de{' '}
-              <strong>{loteToDelete?.cantidadProducida} unidades</strong> registrado el{' '}
-              <strong>{loteToDelete?.fechaProduccion}</strong> bajo la supervisión de{' '}
+              <strong>{loteToDelete?.cantidadProducida || loteToDelete?.cantidad_producida} unidades</strong> registrado el{' '}
+              <strong>{loteToDelete?.fechaProduccion || loteToDelete?.fecha_lote ? new Date(loteToDelete.fechaProduccion || loteToDelete.fecha_lote).toLocaleDateString("es-GT") : "N/A"}</strong> bajo la supervisión de{' '}
               <strong>{loteToDelete?.supervisor}</strong>.
             </AlertDialogDescription>
           </AlertDialogHeader>

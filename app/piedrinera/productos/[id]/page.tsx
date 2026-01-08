@@ -32,7 +32,11 @@ export default function ProductoDetallePage({ params }: ProductoDetallePageProps
       try {
         setLoading(true)
         setError(null)
-        const agregadoData = await apiGet<any>(`${API_ENDPOINTS.PIEDRINERA.PRODUCTOS}/${id}`)
+        // Construir URL correctamente para evitar dobles slashes
+        const productoUrl = API_ENDPOINTS.PIEDRINERA.PRODUCTOS.endsWith('/') 
+          ? `${API_ENDPOINTS.PIEDRINERA.PRODUCTOS}${id}/`
+          : `${API_ENDPOINTS.PIEDRINERA.PRODUCTOS}/${id}/`
+        const agregadoData = await apiGet<any>(productoUrl)
         if (!agregadoData) {
           router.push("/piedrinera/productos")
           return
@@ -149,7 +153,13 @@ export default function ProductoDetallePage({ params }: ProductoDetallePageProps
               Editar
             </Button>
           </Link>
-          <Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              // Función para imprimir la información del producto
+              window.print()
+            }}
+          >
             <Printer className="mr-2 h-4 w-4" />
             Imprimir
           </Button>

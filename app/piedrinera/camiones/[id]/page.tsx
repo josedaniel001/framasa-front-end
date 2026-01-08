@@ -30,7 +30,11 @@ export default function CamionDetallePage({ params }: CamionDetallePageProps) {
       try {
         setLoading(true)
         setError(null)
-        const camionData = await apiGet<any>(`${API_ENDPOINTS.PIEDRINERA.CAMIONES}/${id}`)
+        // Construir URL correctamente para evitar dobles slashes
+        const camionUrl = API_ENDPOINTS.PIEDRINERA.CAMIONES.endsWith('/')
+          ? `${API_ENDPOINTS.PIEDRINERA.CAMIONES}${id}/`
+          : `${API_ENDPOINTS.PIEDRINERA.CAMIONES}/${id}/`
+        const camionData = await apiGet<any>(camionUrl)
         setCamion(camionData)
       } catch (err: any) {
         console.error("Error al cargar camión:", err)
@@ -124,7 +128,13 @@ export default function CamionDetallePage({ params }: CamionDetallePageProps) {
               <Edit className="mr-2 h-4 w-4" /> Editar
             </Button>
           </Link>
-          <Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              // Función para imprimir la información del camión
+              window.print()
+            }}
+          >
             <Printer className="mr-2 h-4 w-4" /> Imprimir
           </Button>
         </div>

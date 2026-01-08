@@ -1,12 +1,18 @@
 "use client"
 
-import { useState, useCallback } from "react"
-import { Card, CardContent } from "@/components/ui/card"
+import { useState, useMemo, useEffect } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationEllipsis,
+} from "@/components/ui/pagination"
 import {
   Plus,
   Search,
@@ -14,297 +20,621 @@ import {
   Eye,
   Edit,
   DollarSign,
-  TrendingUp,
-  Users,
-  Package,
-  Calendar,
-  MapPin,
-  Truck,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  RefreshCw,
+  Trash2,
+  X,
+  ChevronLeft as ChevronLeftIcon,
+  ChevronRight as ChevronRightIcon,
 } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Label } from "@/components/ui/label"
 import Link from "next/link"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet, apiPost } from "@/lib/api-client"
+import { useToast } from "@/hooks/use-toast"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
-// Datos de ejemplo para ventas de piedrinera
-const ventasData = [
-  {
-    id: "V-001",
-    fecha: "2024-01-15",
-    cliente: "Constructora ABC",
-    agregado: "Arena Fina",
-    cantidad: 25.5,
-    unidad: "m³",
-    precioUnitario: 45000,
-    total: 1147500,
-    estado: "Completada",
-    destino: "Obra Los Pinos",
-    camion: "CAM-001",
-    conductor: "Juan Pérez",
-  },
-  {
-    id: "V-002",
-    fecha: "2024-01-15",
-    cliente: "Obras Civiles SRL",
-    agregado: 'Grava 3/4"',
-    cantidad: 40.0,
-    unidad: "m³",
-    precioUnitario: 52000,
-    total: 2080000,
-    estado: "En Proceso",
-    destino: "Proyecto Residencial",
-    camion: "CAM-003",
-    conductor: "María García",
-  },
-  {
-    id: "V-003",
-    fecha: "2024-01-14",
-    cliente: "Infraestructura Total",
-    agregado: 'Piedrín 1/2"',
-    cantidad: 60.0,
-    unidad: "m³",
-    precioUnitario: 48000,
-    total: 2880000,
-    estado: "Pendiente",
-    destino: "Carretera Nacional",
-    camion: "Pendiente",
-    conductor: "Pendiente",
-  },
-  {
-    id: "V-004",
-    fecha: "2024-01-14",
-    cliente: "Constructora XYZ",
-    agregado: "Arena Gruesa",
-    cantidad: 30.0,
-    unidad: "m³",
-    precioUnitario: 42000,
-    total: 1260000,
-    estado: "Completada",
-    destino: "Edificio Central",
-    camion: "CAM-002",
-    conductor: "Carlos López",
-  },
-]
+const ITEMS_PER_PAGE = 10
 
-const estadoColors = {
-  Completada: "bg-green-100 text-green-800",
-  "En Proceso": "bg-blue-100 text-blue-800",
-  Pendiente: "bg-yellow-100 text-yellow-800",
-  Cancelada: "bg-red-100 text-red-800",
+interface Factura {
+  id: number
+  numero_factura: string
+  empresa: string
+  empresa_display: string
+  cliente_id: number
+  cliente_nombre: string
+  cliente_nit: string | null
+  subtotal: number
+  descuento: number
+  total: number
+  total_pagado: number
+  saldo_pendiente: number
+  estado: string
+  estado_display: string
+  fecha_factura: string
+  fecha_vencimiento: string | null
+  observaciones: string | null
+  detalles: {
+    id: number
+    producto_codigo: string
+    producto_nombre: string
+    producto_empresa: string
+    cantidad: number | string
+    precio_unitario: number | string
+    descuento: number | string
+    subtotal: number | string
+  }[]
+}
+
+interface FacturaListResponse {
+  count: number
+  next: string | null
+  previous: string | null
+  results: Factura[]
 }
 
 export default function PiedrinerapVentasPage() {
+  const { toast } = useToast()
+  const [facturas, setFacturas] = useState<Factura[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
-  const [filterEstado, setFilterEstado] = useState("todos")
-  const [selectedVenta, setSelectedVenta] = useState<any>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
+  const [stats, setStats] = useState<any>(null)
+  const [filters, setFilters] = useState({
+    estado: "todos",
+    periodo: "todos",
+  })
+  const [selectedVenta, setSelectedVenta] = useState<Factura | null>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
 
-  const handleOpenDetailModal = useCallback((venta: any) => {
-    setSelectedVenta(venta)
-    setIsDetailModalOpen(true)
-  }, [])
+  // Cargar facturas desde la API
+  useEffect(() => {
+    loadFacturas()
+    loadStats()
+  }, [currentPage, filters, searchTerm])
 
-  const handleCloseDetailModal = useCallback(() => {
-    setIsDetailModalOpen(false)
-    setSelectedVenta(null)
-  }, [])
+  const loadFacturas = async () => {
+    try {
+      setLoading(true)
+      setError(null)
 
-  const filteredVentas = ventasData.filter((venta) => {
-    const matchesSearch =
-      venta.cliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      venta.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      venta.agregado.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesFilter = filterEstado === "todos" || venta.estado === filterEstado
-    return matchesSearch && matchesFilter
-  })
+      const params = new URLSearchParams()
+      params.append("page", String(currentPage))
+      // Siempre filtrar por PIEDRINERA
+      params.append("empresa", "PIEDRINERA")
 
-  // Cálculos para KPIs
-  const totalVentas = ventasData.reduce((sum, venta) => sum + venta.total, 0)
-  const ventasCompletadas = ventasData.filter((v) => v.estado === "Completada").length
-  const volumenTotal = ventasData.reduce((sum, venta) => sum + venta.cantidad, 0)
-  const clientesUnicos = new Set(ventasData.map((v) => v.cliente)).size
+      // Filtros
+      if (filters.estado !== "todos") {
+        // Mapear estados de UI a estados de API
+        const estadoMap: Record<string, string> = {
+          "Pendiente": "PENDIENTE",
+          "Completada": "PAGADA",
+          "Cancelada": "ANULADA",
+        }
+        params.append("estado", estadoMap[filters.estado] || filters.estado)
+      } else {
+        // Por defecto, excluir facturas canceladas
+        params.append("estado_not", "ANULADA")
+      }
+
+      // Filtro por período
+      if (filters.periodo !== "todos") {
+        const hoy = new Date()
+        let fechaDesde = ""
+        if (filters.periodo === "hoy") {
+          fechaDesde = hoy.toISOString().split("T")[0]
+        } else if (filters.periodo === "semana") {
+          const semanaAtras = new Date(hoy)
+          semanaAtras.setDate(hoy.getDate() - 7)
+          fechaDesde = semanaAtras.toISOString().split("T")[0]
+        } else if (filters.periodo === "mes") {
+          const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+          fechaDesde = inicioMes.toISOString().split("T")[0]
+        }
+        if (fechaDesde) {
+          params.append("fecha_desde", fechaDesde)
+        }
+        params.append("fecha_hasta", hoy.toISOString().split("T")[0])
+      }
+
+      // Búsqueda
+      if (searchTerm) {
+        params.append("numero", searchTerm)
+      }
+
+      const url = `${API_ENDPOINTS.FACTURACION.FACTURAS}?${params.toString()}`
+      const data = await apiGet<FacturaListResponse>(url)
+
+      setFacturas(data.results || [])
+      setTotalCount(data.count || 0)
+      setTotalPages(Math.ceil((data.count || 0) / ITEMS_PER_PAGE))
+    } catch (err: any) {
+      console.error("Error al cargar facturas:", err)
+      setError(err.message || "Error al cargar las facturas")
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las facturas",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadStats = async () => {
+    try {
+      const hoy = new Date()
+      const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+      const params = new URLSearchParams()
+      params.append("fecha_desde", inicioMes.toISOString().split("T")[0])
+      params.append("fecha_hasta", hoy.toISOString().split("T")[0])
+      // Siempre filtrar por PIEDRINERA
+      params.append("empresa", "PIEDRINERA")
+
+      const data = await apiGet<any>(`${API_ENDPOINTS.FACTURACION.FACTURAS_ESTADISTICAS}?${params.toString()}`)
+      setStats(data)
+    } catch (err) {
+      console.error("Error al cargar estadísticas:", err)
+    }
+  }
+
+  // Resetear página cuando cambian los filtros
+  const handleFilterChange = (key: string, value: string) => {
+    setFilters((prev) => ({ ...prev, [key]: value }))
+    setCurrentPage(1)
+  }
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value)
+    setCurrentPage(1)
+  }
+
+  const clearFilters = () => {
+    setFilters({ estado: "todos", periodo: "todos" })
+    setSearchTerm("")
+    setCurrentPage(1)
+  }
+
+  // Función para cancelar una factura
+  const cancelarFactura = async (factura: Factura) => {
+    if (factura.estado === "ANULADA") {
+      toast({
+        title: "Factura ya cancelada",
+        description: "Esta factura ya está en estado cancelado",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (factura.total_pagado > 0) {
+      toast({
+        title: "No se puede cancelar",
+        description: "No se puede cancelar una factura que ya tiene pagos registrados",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      await apiPost(API_ENDPOINTS.FACTURACION.FACTURA_ANULAR(factura.id), {})
+
+      toast({
+        title: "Factura cancelada",
+        description: `La factura ${factura.numero_factura} ha sido cancelada exitosamente`,
+      })
+
+      // Recargar datos
+      await loadFacturas()
+      await loadStats()
+    } catch (error: any) {
+      console.error("Error al cancelar factura:", error)
+      toast({
+        title: "Error al cancelar",
+        description: error.message || "No se pudo cancelar la factura",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const hasActiveFilters = filters.estado !== "todos" || filters.periodo !== "todos"
+
+  // Calcular estadísticas desde los datos de la API
+  const totalVentasMes = stats?.total_ventas || 0
+  const ventasPendientes = stats?.por_estado?.find((e: any) => e.estado === "PENDIENTE")?.count || 0
+  const ventasCompletadas = stats?.por_estado?.find((e: any) => e.estado === "PAGADA")?.count || 0
+  const ventasCanceladas = stats?.por_estado?.find((e: any) => e.estado === "ANULADA")?.count || 0
+
+  const getStatusVariant = (status: string) => {
+    switch (status) {
+      case "PAGADA":
+        return "default"
+      case "PENDIENTE":
+        return "secondary"
+      case "PARCIAL":
+        return "secondary"
+      case "ANULADA":
+        return "destructive"
+      case "BORRADOR":
+        return "outline"
+      default:
+        return "outline"
+    }
+  }
+
+  const getStatusDisplay = (status: string) => {
+    switch (status) {
+      case "PAGADA":
+        return "Pagada"
+      case "PENDIENTE":
+        return "Pendiente"
+      case "PARCIAL":
+        return "Pago Parcial"
+      case "ANULADA":
+        return "Anulada"
+      case "BORRADOR":
+        return "Borrador"
+      default:
+        return status
+    }
+  }
+
+  const formatFecha = (fecha: string) => {
+    return new Date(fecha).toLocaleDateString("es-GT", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    })
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Ventas - Piedrinera</h1>
-          <p className="text-gray-600">Gestión de ventas de agregados y materiales</p>
-        </div>
-        <Button className="bg-blue-600 hover:bg-blue-700" asChild>
-          <Link href="/piedrinera/ventas/nueva">
-            <Plus className="h-4 w-4 mr-2" />
-            Nueva Venta
-          </Link>
-        </Button>
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Ventas - Piedrinera</h1>
+        <Link href="/piedrinera/ventas/nueva">
+          <Button>
+            <Plus className="mr-2 h-4 w-4" /> Nueva Venta
+          </Button>
+        </Link>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Ventas del Mes</p>
-                <p className="text-2xl font-bold">₡{totalVentas.toLocaleString()}</p>
-              </div>
-              <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
-                <DollarSign className="h-6 w-6 text-green-600" />
-              </div>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Ventas del Mes</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              Q{totalVentasMes.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0.00"}
             </div>
-            <div className="flex items-center mt-4 text-sm">
-              <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
-              <span className="text-green-600">+12.5%</span>
-              <span className="text-gray-500 ml-1">vs mes anterior</span>
-            </div>
+            <p className="text-xs text-muted-foreground">Total de ingresos este mes</p>
           </CardContent>
         </Card>
-
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Ventas Completadas</p>
-                <p className="text-2xl font-bold">{ventasCompletadas}</p>
-              </div>
-              <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Package className="h-6 w-6 text-blue-600" />
-              </div>
-            </div>
-            <div className="flex items-center mt-4 text-sm">
-              <span className="text-gray-500">de {ventasData.length} totales</span>
-            </div>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Ventas Pendientes</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{ventasPendientes}</div>
+            <p className="text-xs text-muted-foreground">Por completar</p>
           </CardContent>
         </Card>
-
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Volumen Vendido</p>
-                <p className="text-2xl font-bold">{volumenTotal.toFixed(1)} m³</p>
-              </div>
-              <div className="h-12 w-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                <Truck className="h-6 w-6 text-orange-600" />
-              </div>
-            </div>
-            <div className="flex items-center mt-4 text-sm">
-              <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
-              <span className="text-green-600">+8.3%</span>
-              <span className="text-gray-500 ml-1">vs mes anterior</span>
-            </div>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Ventas Completadas</CardTitle>
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{ventasCompletadas}</div>
+            <p className="text-xs text-muted-foreground">Transacciones finalizadas</p>
           </CardContent>
         </Card>
-
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Clientes Activos</p>
-                <p className="text-2xl font-bold">{clientesUnicos}</p>
-              </div>
-              <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                <Users className="h-6 w-6 text-purple-600" />
-              </div>
-            </div>
-            <div className="flex items-center mt-4 text-sm">
-              <span className="text-gray-500">clientes únicos</span>
-            </div>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Ventas Canceladas</CardTitle>
+            <XCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{ventasCanceladas}</div>
+            <p className="text-xs text-muted-foreground">Transacciones anuladas</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filtros y búsqueda */}
       <Card>
-        <CardContent className="p-6">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+        <CardHeader>
+          <CardTitle>Lista de Ventas</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4 mb-4">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar por cliente, ID o agregado..."
+                  type="search"
+                  placeholder="Buscar ventas por código, cliente o estado..."
+                  className="w-full rounded-lg bg-background pl-8"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  onChange={(e) => handleSearchChange(e.target.value)}
                 />
               </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline">
+                    <Filter className="h-4 w-4 mr-2" />
+                    Filtros
+                    {hasActiveFilters && (
+                      <Badge variant="secondary" className="ml-2 px-1.5 py-0">
+                        Activos
+                      </Badge>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80" align="start">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium">Filtros Avanzados</h4>
+                      {hasActiveFilters && (
+                        <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8">
+                          <X className="h-3 w-3 mr-1" />
+                          Limpiar
+                        </Button>
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="estado">Estado</Label>
+                        <Select
+                          value={filters.estado}
+                          onValueChange={(value) => handleFilterChange("estado", value)}
+                        >
+                          <SelectTrigger id="estado">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="todos">Todos</SelectItem>
+                            <SelectItem value="Pendiente">Pendientes</SelectItem>
+                            <SelectItem value="Completada">Pagadas</SelectItem>
+                            <SelectItem value="Cancelada">Anuladas</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="periodo">Período</Label>
+                        <Select
+                          value={filters.periodo}
+                          onValueChange={(value) => handleFilterChange("periodo", value)}
+                        >
+                          <SelectTrigger id="periodo">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="todos">Todos</SelectItem>
+                            <SelectItem value="hoy">Hoy</SelectItem>
+                            <SelectItem value="semana">Última Semana</SelectItem>
+                            <SelectItem value="mes">Este Mes</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
-            <Select value={filterEstado} onValueChange={setFilterEstado}>
-              <SelectTrigger className="w-full sm:w-48">
-                <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Filtrar por estado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos los estados</SelectItem>
-                <SelectItem value="Completada">Completada</SelectItem>
-                <SelectItem value="En Proceso">En Proceso</SelectItem>
-                <SelectItem value="Pendiente">Pendiente</SelectItem>
-                <SelectItem value="Cancelada">Cancelada</SelectItem>
-              </SelectContent>
-            </Select>
+            {hasActiveFilters && (
+              <div className="flex flex-wrap gap-2">
+                {filters.estado !== "todos" && (
+                  <Badge variant="secondary" className="gap-1">
+                    Estado: {filters.estado}
+                    <button
+                      type="button"
+                      onClick={() => handleFilterChange("estado", "todos")}
+                      className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                      aria-label={`Quitar filtro de estado: ${filters.estado}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+                {filters.periodo !== "todos" && (
+                  <Badge variant="secondary" className="gap-1">
+                    Período:{" "}
+                    {filters.periodo === "hoy"
+                      ? "Hoy"
+                      : filters.periodo === "semana"
+                        ? "Última Semana"
+                        : "Este Mes"}
+                    <button
+                      type="button"
+                      onClick={() => handleFilterChange("periodo", "todos")}
+                      className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                      aria-label={`Quitar filtro de período: ${filters.periodo === "hoy" ? "Hoy" : filters.periodo === "semana" ? "Última Semana" : "Este Mes"}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                )}
+              </div>
+            )}
           </div>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm text-muted-foreground">
+              Mostrando {facturas.length > 0 ? (currentPage - 1) * ITEMS_PER_PAGE + 1 : 0}-
+              {Math.min(currentPage * ITEMS_PER_PAGE, totalCount)} de {totalCount} facturas
+            </div>
+            <Button variant="outline" size="sm" onClick={() => loadFacturas()}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Actualizar
+            </Button>
+          </div>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : error ? (
+            <div className="text-center text-destructive py-8">{error}</div>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Número Factura</TableHead>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead>Saldo</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {facturas.map((factura) => (
+                    <TableRow key={factura.id}>
+                      <TableCell className="font-medium">{factura.numero_factura}</TableCell>
+                      <TableCell>{formatFecha(factura.fecha_factura)}</TableCell>
+                      <TableCell>
+                        <div>
+                          <div>{factura.cliente_nombre}</div>
+                          {factura.cliente_nit && (
+                            <div className="text-xs text-muted-foreground">{factura.cliente_nit}</div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        Q{factura.total.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell>
+                        {factura.saldo_pendiente > 0 ? (
+                          <span className="text-red-600 font-medium">
+                            Q{factura.saldo_pendiente.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        ) : (
+                          <span className="text-green-600">Pagado</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={getStatusVariant(factura.estado)}>
+                          {getStatusDisplay(factura.estado)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" size="sm" onClick={() => { setSelectedVenta(factura); setIsDetailModalOpen(true); }} aria-label="Ver detalle de factura">
+                            <Eye className="h-4 w-4" />
+                            <span className="sr-only">Ver</span>
+                          </Button>
+                          <Link href={`/piedrinera/ventas/${factura.id}/editar`}>
+                            <Button variant="outline" size="sm" aria-label="Editar factura">
+                              <Edit className="h-4 w-4" />
+                              <span className="sr-only">Editar</span>
+                            </Button>
+                          </Link>
+                          {factura.estado !== "ANULADA" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => cancelarFactura(factura)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              aria-label="Cancelar factura"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">Cancelar</span>
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {facturas.length === 0 && (
+                <p className="text-center text-muted-foreground mt-4">No se encontraron facturas.</p>
+              )}
+            </>
+          )}
+          {totalPages > 1 && (
+            <div className="mt-4">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="gap-1"
+                    >
+                      <ChevronLeftIcon className="h-4 w-4" />
+                      <span className="hidden sm:block">Anterior</span>
+                    </Button>
+                  </PaginationItem>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                    if (
+                      page === 1 ||
+                      page === totalPages ||
+                      (page >= currentPage - 1 && page <= currentPage + 1)
+                    ) {
+                      return (
+                        <PaginationItem key={page}>
+                          <Button
+                            variant={currentPage === page ? "outline" : "ghost"}
+                            size="sm"
+                            onClick={() => setCurrentPage(page)}
+                            className={currentPage === page ? "font-semibold" : ""}
+                          >
+                            {page}
+                          </Button>
+                        </PaginationItem>
+                      )
+                    } else if (page === currentPage - 2 || page === currentPage + 2) {
+                      return (
+                        <PaginationItem key={page}>
+                          <PaginationEllipsis />
+                        </PaginationItem>
+                      )
+                    }
+                    return null
+                  })}
+                  <PaginationItem>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="gap-1"
+                    >
+                      <span className="hidden sm:block">Siguiente</span>
+                      <ChevronRightIcon className="h-4 w-4" />
+                    </Button>
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Lista de ventas */}
-      <div className="grid gap-4">
-        {filteredVentas.map((venta) => (
-          <Card key={venta.id} className="hover:shadow-md transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex-1 grid grid-cols-1 md:grid-cols-6 gap-4">
-                  <div>
-                    <p className="font-semibold text-blue-600">{venta.id}</p>
-                    <p className="text-sm text-gray-500 flex items-center mt-1">
-                      <Calendar className="h-3 w-3 mr-1" />
-                      {venta.fecha}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-medium">{venta.cliente}</p>
-                    <p className="text-sm text-gray-500 flex items-center mt-1">
-                      <MapPin className="h-3 w-3 mr-1" />
-                      {venta.destino}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-medium">{venta.agregado}</p>
-                    <p className="text-sm text-gray-500">
-                      {venta.cantidad} {venta.unidad}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-semibold">₡{venta.total.toLocaleString()}</p>
-                    <p className="text-sm text-gray-500">
-                      ₡{venta.precioUnitario.toLocaleString()}/{venta.unidad}
-                    </p>
-                  </div>
-                  <div>
-                    <Badge className={estadoColors[venta.estado as keyof typeof estadoColors]}>{venta.estado}</Badge>
-                    <p className="text-sm text-gray-500 mt-1">
-                      {venta.camion !== "Pendiente" ? venta.camion : "Sin asignar"}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleOpenDetailModal(venta)}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/piedrinera/ventas/${venta.id}/editar`}>
-                        <Edit className="h-4 w-4" />
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
       {/* Modal de detalles */}
-      <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
+      <Dialog open={isDetailModalOpen} onOpenChange={(open) => {
+        setIsDetailModalOpen(open)
+        if (!open) {
+          setSelectedVenta(null)
+        }
+      }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Detalles de Venta - {selectedVenta?.id}</DialogTitle>
+            <DialogTitle>Detalles de Venta - {selectedVenta?.numero_factura}</DialogTitle>
+            <DialogDescription>
+              Información detallada de la venta incluyendo cliente, productos y totales.
+            </DialogDescription>
           </DialogHeader>
           {selectedVenta && (
             <div className="space-y-6">
@@ -313,57 +643,86 @@ export default function PiedrinerapVentasPage() {
                   <h4 className="font-semibold mb-2">Información General</h4>
                   <div className="space-y-2 text-sm">
                     <p>
-                      <span className="font-medium">Fecha:</span> {selectedVenta.fecha}
+                      <span className="font-medium">Fecha:</span> {formatFecha(selectedVenta.fecha_factura)}
                     </p>
                     <p>
-                      <span className="font-medium">Cliente:</span> {selectedVenta.cliente}
+                      <span className="font-medium">Cliente:</span> {selectedVenta.cliente_nombre}
                     </p>
-                    <p>
-                      <span className="font-medium">Destino:</span> {selectedVenta.destino}
-                    </p>
+                    {selectedVenta.cliente_nit && (
+                      <p>
+                        <span className="font-medium">NIT:</span> {selectedVenta.cliente_nit}
+                      </p>
+                    )}
                     <p>
                       <span className="font-medium">Estado:</span>
-                      <Badge className={`ml-2 ${estadoColors[selectedVenta.estado as keyof typeof estadoColors]}`}>
-                        {selectedVenta.estado}
+                      <Badge variant={getStatusVariant(selectedVenta.estado)} className="ml-2">
+                        {getStatusDisplay(selectedVenta.estado)}
                       </Badge>
                     </p>
                   </div>
                 </div>
                 <div>
-                  <h4 className="font-semibold mb-2">Detalles del Producto</h4>
+                  <h4 className="font-semibold mb-2">Totales</h4>
                   <div className="space-y-2 text-sm">
                     <p>
-                      <span className="font-medium">Agregado:</span> {selectedVenta.agregado}
+                      <span className="font-medium">Subtotal:</span> Q{selectedVenta.subtotal.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <p>
-                      <span className="font-medium">Cantidad:</span> {selectedVenta.cantidad} {selectedVenta.unidad}
+                      <span className="font-medium">Descuento:</span> Q{selectedVenta.descuento.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <p>
-                      <span className="font-medium">Precio Unitario:</span> ₡
-                      {selectedVenta.precioUnitario.toLocaleString()}
+                      <span className="font-medium">Total:</span> Q{selectedVenta.total.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <p>
-                      <span className="font-medium">Total:</span> ₡{selectedVenta.total.toLocaleString()}
+                      <span className="font-medium">Saldo Pendiente:</span>{" "}
+                      {selectedVenta.saldo_pendiente > 0 ? (
+                        <span className="text-red-600 font-medium">
+                          Q{selectedVenta.saldo_pendiente.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      ) : (
+                        <span className="text-green-600">Pagado</span>
+                      )}
                     </p>
                   </div>
                 </div>
               </div>
               <div>
-                <h4 className="font-semibold mb-2">Información de Despacho</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <p>
-                    <span className="font-medium">Camión:</span> {selectedVenta.camion}
-                  </p>
-                  <p>
-                    <span className="font-medium">Conductor:</span> {selectedVenta.conductor}
-                  </p>
+                <h4 className="font-semibold mb-2">Productos</h4>
+                <div className="space-y-2">
+                  {Array.isArray(selectedVenta.detalles) && selectedVenta.detalles.length > 0 ? (
+                    selectedVenta.detalles.map((detalle) => {
+                      if (!detalle) return null
+                      const cantidad = typeof detalle.cantidad === "string" ? parseFloat(detalle.cantidad) : (detalle.cantidad || 0)
+                      const precio = typeof detalle.precio_unitario === "string" ? parseFloat(detalle.precio_unitario) : (detalle.precio_unitario || 0)
+                      const subtotal = typeof detalle.subtotal === "string" ? parseFloat(detalle.subtotal) : (detalle.subtotal || 0)
+                      return (
+                        <div key={detalle.id || Math.random()} className="flex justify-between text-sm p-2 bg-gray-50 rounded">
+                          <div>
+                            <p className="font-medium">{detalle.producto_nombre || "N/A"}</p>
+                            <p className="text-gray-500">
+                              {cantidad.toFixed(2)} m³ × Q{precio.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                          <p className="font-medium">
+                            Q{subtotal.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      )
+                    })
+                  ) : (
+                    <p className="text-sm text-gray-500">No hay productos en esta venta</p>
+                  )}
                 </div>
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={handleCloseDetailModal}>
+                <Button variant="outline" onClick={() => setIsDetailModalOpen(false)}>
                   Cerrar
                 </Button>
-                <Button>Editar Venta</Button>
+                <Button asChild>
+                  <Link href={`/piedrinera/ventas/${selectedVenta.id}/editar`}>
+                    Editar Venta
+                  </Link>
+                </Button>
               </div>
             </div>
           )}

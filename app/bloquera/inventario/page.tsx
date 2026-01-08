@@ -129,33 +129,61 @@ export default function InventarioBloqueraPage() {
           throw productosResult.reason
         }
 
-        const mappedProductos = productosData.map((producto: any) => ({
+        // Mapear datos del backend al formato del frontend
+        // Django devuelve: id, codigo, nombre, descripcion, tipoBloque (o tipo_bloque), dimensiones,
+        // precioVentaUnitario (o precio_unitario), precioDescuento (o precio_descuento), 
+        // costoProduccionUnitario (o costo_produccion), stockActual (o stock_actual), 
+        // stockMinimo (o stock_minimo), activo, created_at, updated_at
+        const mappedProductos = productosData.map((producto: any) => {
+          // Debug: verificar qué valores están llegando
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[INVENTARIO] Producto raw:', {
+              id: producto.id,
+              codigo: producto.codigo,
+              stockActual: producto.stockActual ?? producto.stock_actual,
+              stockMinimo: producto.stockMinimo ?? producto.stock_minimo,
+              productoRaw: producto
+            })
+          }
+          
+          return {
           id: producto.id ?? producto.pk ?? "",
           codigo: producto.codigo ?? "",
           nombre: producto.nombre ?? "",
           descripcion: producto.descripcion ?? "",
-          tipoBloque: producto.tipo_bloque ?? producto.tipoBloque ?? "",
+          tipoBloque: producto.tipoBloque ?? producto.tipo_bloque ?? "",
           dimensiones: producto.dimensiones ?? "",
           precioVentaUnitario:
-            producto.precio_venta_unitario ??
-            producto.precio_unitario ??
             producto.precioVentaUnitario ??
+            producto.precio_unitario ??
+            producto.precio_venta_unitario ??
             0,
+          precioDescuento: producto.precioDescuento ?? producto.precio_descuento ?? null,
           costoProduccionUnitario:
-            producto.costo_produccion_unitario ??
             producto.costoProduccionUnitario ??
             producto.costo_produccion ??
+            producto.costo_produccion_unitario ??
             0,
-          stockActual: producto.stock_actual ?? producto.stockActual ?? 0,
-          stockMinimo: producto.stock_minimo ?? producto.stockMinimo ?? 0,
+          stockActual: producto.stockActual !== undefined && producto.stockActual !== null 
+            ? producto.stockActual 
+            : (producto.stock_actual !== undefined && producto.stock_actual !== null 
+              ? producto.stock_actual 
+              : 0),
+          stockMinimo: producto.stockMinimo !== undefined && producto.stockMinimo !== null 
+            ? producto.stockMinimo 
+            : (producto.stock_minimo !== undefined && producto.stock_minimo !== null 
+              ? producto.stock_minimo 
+              : 0),
           activo: producto.activo !== undefined ? producto.activo : true,
+          tieneStockBajo: producto.tieneStockBajo ?? producto.tiene_stock_bajo ?? false,
           ultimaActualizacion:
-            producto.updated_at ??
             producto.ultimaActualizacion ??
+            producto.updated_at ??
             producto.fecha_actualizacion ??
             producto.created_at ??
             "",
-        }))
+          }
+        })
 
         let statsData: ProductosStats | null = null
         if (statsResult.status === "fulfilled" && statsResult.value) {
@@ -175,12 +203,19 @@ export default function InventarioBloqueraPage() {
           }
 
           // Mapear datos del backend al formato del frontend
+          // Django devuelve: id, producto (objeto con id, codigo, nombre), producto_id, tipo, tipoDisplay, 
+          // cantidad, stockAnterior, stockNuevo, motivo, observaciones, usuario (objeto), usuario_id, 
+          // fechaMovimiento, fecha_movimiento, created_at, updated_at
           movimientosData = movimientosData.map((mov: any) => ({
             id: mov.id,
-            producto_id: mov.producto_id || mov.producto?.id,
-            producto: mov.producto,
+            producto_id: mov.producto_id || mov.producto?.id || mov.producto_id,
+            producto: mov.producto || {
+              id: mov.producto_id,
+              codigo: mov.producto_codigo,
+              nombre: mov.producto_nombre,
+            },
             tipo: mov.tipo || mov.tipo_ajuste || 'ENTRADA',
-            tipoDisplay: mov.tipoDisplay || mov.tipo || mov.tipo_ajuste,
+            tipoDisplay: mov.tipoDisplay || mov.tipo_display || mov.tipo || mov.tipo_ajuste,
             cantidad: mov.cantidad,
             stockAnterior: mov.stockAnterior || mov.stock_anterior,
             stock_anterior: mov.stock_anterior || mov.stockAnterior,
@@ -189,13 +224,16 @@ export default function InventarioBloqueraPage() {
             motivo: mov.motivo || mov.razon,
             observaciones: mov.observaciones || mov.referencia,
             usuario_id: mov.usuario_id || mov.usuario?.id,
-            usuario: mov.usuario,
+            usuario: mov.usuario || {
+              id: mov.usuario_id,
+              nombre: mov.usuario_nombre,
+            },
             fechaMovimiento: mov.fechaMovimiento || mov.fecha_movimiento || mov.fecha_creacion || mov.created_at,
             fecha_movimiento: mov.fecha_movimiento || mov.fechaMovimiento || mov.fecha_creacion || mov.created_at,
             fecha_creacion: mov.fecha_creacion || mov.created_at || mov.fechaMovimiento || mov.fecha_movimiento,
             created_at: mov.created_at || mov.fecha_creacion,
             updated_at: mov.updated_at,
-            // Campos legacy
+            // Campos legacy para compatibilidad
             tipo_ajuste: mov.tipo_ajuste || mov.tipo,
             razon: mov.razon || mov.motivo,
             referencia: mov.referencia || mov.observaciones,
@@ -348,14 +386,32 @@ export default function InventarioBloqueraPage() {
   const endIndex = startIndex + ITEMS_PER_PAGE
   const paginatedProductos = filteredProductos.slice(startIndex, endIndex)
 
+  // Calcular estadísticas: usar stats del backend si están disponibles, sino calcular desde productos
   const totalArticulos = stats?.total_productos ?? productos.length
-  const bloquesActivos = stats?.productos_activos ?? productos.filter((p) => p.activo).length
-  const stockBajo = stats?.productos_stock_bajo ?? productos.filter((p) => p.stockActual <= (p.stockMinimo || 0)).length
+  
+  const bloquesActivos = stats?.productos_activos ?? productos.filter((p) => p.activo === true).length
+  
+  // Stock bajo: productos donde stock_actual <= stock_minimo
+  const stockBajo = stats?.productos_stock_bajo ?? productos.filter((p) => {
+    const stockActual = p.stockActual ?? 0
+    const stockMinimo = p.stockMinimo ?? 0
+    return stockActual <= stockMinimo
+  }).length
+  
+  // Stock total en unidades: suma de todos los stock_actual
   const stockTotalUnidades =
-    stats?.stock_total_unidades ?? productos.reduce((sum, p) => sum + (p.stockActual || 0), 0)
+    stats?.stock_total_unidades ?? productos.reduce((sum, p) => {
+      return sum + (p.stockActual ?? 0)
+    }, 0)
+  
+  // Valor total del inventario: suma de (stock_actual * costo_produccion) para cada producto
   const valorTotalInventario =
     stats?.valor_total ??
-    productos.reduce((sum, p) => sum + (p.stockActual || 0) * (p.costoProduccionUnitario || 0), 0)
+    productos.reduce((sum, p) => {
+      const stockActual = p.stockActual ?? 0
+      const costoProduccion = p.costoProduccionUnitario ?? 0
+      return sum + (stockActual * costoProduccion)
+    }, 0)
 
   if (loading) {
     return (
@@ -602,7 +658,13 @@ export default function InventarioBloqueraPage() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>{producto.stockMinimo || 0}</TableCell>
+                    <TableCell>
+                      <span className="font-medium">
+                        {producto.stockMinimo !== undefined && producto.stockMinimo !== null 
+                          ? producto.stockMinimo 
+                          : 0}
+                      </span>
+                    </TableCell>
                   <TableCell>
                       <Badge variant={stockBajoProducto ? "destructive" : "secondary"}>
                         {stockBajoProducto ? "Bajo" : "Suficiente"}

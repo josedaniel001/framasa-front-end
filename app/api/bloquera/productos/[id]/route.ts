@@ -93,23 +93,28 @@ export async function PUT(
     const body = await request.json()
     
     // Convertir campos camelCase a snake_case para Django
-    const djangoBody = {
+    const djangoBody: any = {
       codigo: body.codigo,
       nombre: body.nombre,
       descripcion: body.descripcion || null,
       tipo_bloque: body.tipoBloque || body.tipo_bloque,
       dimensiones: body.dimensiones || null,
       precio_unitario: body.precioVentaUnitario || body.precio_unitario,
+      precio_descuento: body.precioDescuento !== undefined && body.precioDescuento !== null && body.precioDescuento !== '' 
+        ? body.precioDescuento 
+        : (body.precio_descuento !== undefined && body.precio_descuento !== null && body.precio_descuento !== '' 
+          ? body.precio_descuento 
+          : null),
       costo_produccion: body.costoProduccionUnitario || body.costo_produccion,
       stock_actual: body.stockActual !== undefined ? (body.stockActual || body.stock_actual) : undefined,
       stock_minimo: body.stockMinimo !== undefined ? (body.stockMinimo || body.stock_minimo) : undefined,
       activo: body.activo !== undefined ? body.activo : undefined,
     }
 
-    // Remover campos undefined
+    // Remover campos undefined (pero mantener null para precio_descuento si es necesario)
     Object.keys(djangoBody).forEach(key => {
-      if (djangoBody[key as keyof typeof djangoBody] === undefined) {
-        delete djangoBody[key as keyof typeof djangoBody]
+      if (djangoBody[key] === undefined) {
+        delete djangoBody[key]
       }
     })
 
@@ -124,7 +129,22 @@ export async function PUT(
     })
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
+      const errorText = await response.text()
+      let errorData: any = {}
+      try {
+        errorData = JSON.parse(errorText)
+      } catch {
+        errorData = { error: errorText || `Error ${response.status}: ${response.statusText}` }
+      }
+      
+      // Log para debugging
+      console.error('[BLOQUERA API] Error de Django al actualizar:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorData,
+        djangoBody,
+      })
+      
       return NextResponse.json(
         errorData || { error: 'Error al actualizar producto' },
         { status: response.status }

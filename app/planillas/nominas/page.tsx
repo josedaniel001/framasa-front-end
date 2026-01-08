@@ -30,8 +30,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import {
   DollarSign,
   Users,
@@ -45,7 +43,6 @@ import {
   TrendingUp,
   Receipt,
   CreditCard,
-  CalendarIcon,
   Loader2,
   Eye,
   RefreshCw,
@@ -54,7 +51,6 @@ import {
 } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { cn } from "@/lib/utils"
 import { API_ENDPOINTS } from "@/lib/api-config"
 import { apiGet, apiPost, apiPatch } from "@/lib/api-client"
 import { toast } from "sonner"
@@ -123,9 +119,9 @@ export default function NominasPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [generando, setGenerando] = useState(false)
   const [tipoPeriodo, setTipoPeriodo] = useState<string>("QUINCENAL")
-  const [fechaInicio, setFechaInicio] = useState<Date | undefined>(undefined)
-  const [fechaFin, setFechaFin] = useState<Date | undefined>(undefined)
-  const [fechaPago, setFechaPago] = useState<Date | undefined>(undefined)
+  const [fechaInicio, setFechaInicio] = useState<string>("")
+  const [fechaFin, setFechaFin] = useState<string>("")
+  const [fechaPago, setFechaPago] = useState<string>("")
   const [empleadosIncluidos, setEmpleadosIncluidos] = useState<string>("todos")
 
   // Cargar nóminas
@@ -182,6 +178,51 @@ export default function NominasPage() {
     }
   }, [fechaFin, fechaPago])
 
+  // Función para validar que el rango de fechas coincida con el tipo de período
+  const validarPeriodo = (tipoPeriodo: string, fechaInicio: string, fechaFin: string): { valido: boolean; mensaje?: string } => {
+    if (!fechaInicio || !fechaFin) {
+      return { valido: false, mensaje: "Faltan fechas" }
+    }
+
+    const inicio = new Date(fechaInicio)
+    const fin = new Date(fechaFin)
+    
+    // Calcular diferencia en días (incluyendo el día inicial)
+    const diffTime = fin.getTime() - inicio.getTime()
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1 // +1 para incluir ambos días
+    
+    // Días esperados según el tipo de período
+    let diasEsperados: number
+    let nombrePeriodo: string
+    
+    switch (tipoPeriodo.toUpperCase()) {
+      case "MENSUAL":
+        diasEsperados = 30
+        nombrePeriodo = "mensual"
+        break
+      case "QUINCENAL":
+        diasEsperados = 15
+        nombrePeriodo = "quincenal"
+        break
+      case "SEMANAL":
+        diasEsperados = 7
+        nombrePeriodo = "semanal"
+        break
+      default:
+        return { valido: false, mensaje: "Tipo de período inválido" }
+    }
+    
+    // Permitir un margen de ±1 día para flexibilidad
+    if (Math.abs(diffDays - diasEsperados) > 1) {
+      return {
+        valido: false,
+        mensaje: `El rango de fechas debe ser de ${diasEsperados} días para un período ${nombrePeriodo}. Actual: ${diffDays} días.`
+      }
+    }
+    
+    return { valido: true }
+  }
+
   // Función para generar nómina
   const handleGenerarNomina = async () => {
     if (!fechaInicio || !fechaFin || !fechaPago) {
@@ -191,13 +232,30 @@ export default function NominasPage() {
       return
     }
 
+    // Validar que fecha fin sea mayor o igual a fecha inicio
+    if (fechaFin < fechaInicio) {
+      toast.error("Fecha inválida", {
+        description: "La fecha fin debe ser mayor o igual a la fecha inicio",
+      })
+      return
+    }
+
+    // Validar que el rango de fechas coincida con el tipo de período
+    const validacionPeriodo = validarPeriodo(tipoPeriodo, fechaInicio, fechaFin)
+    if (!validacionPeriodo.valido) {
+      toast.error("Período inválido", {
+        description: validacionPeriodo.mensaje,
+      })
+      return
+    }
+
     setGenerando(true)
     try {
       const payload = {
         tipoPeriodo: tipoPeriodo,
-        fechaInicio: format(fechaInicio, "yyyy-MM-dd"),
-        fechaFin: format(fechaFin, "yyyy-MM-dd"),
-        fechaPago: format(fechaPago, "yyyy-MM-dd"),
+        fechaInicio: fechaInicio,
+        fechaFin: fechaFin,
+        fechaPago: fechaPago,
         empleadosIncluidos: empleadosIncluidos,
       }
 
@@ -229,9 +287,9 @@ export default function NominasPage() {
   // Resetear modal
   const resetModal = () => {
     setTipoPeriodo("QUINCENAL")
-    setFechaInicio(undefined)
-    setFechaFin(undefined)
-    setFechaPago(undefined)
+    setFechaInicio("")
+    setFechaFin("")
+    setFechaPago("")
     setEmpleadosIncluidos("todos")
   }
 
@@ -264,9 +322,14 @@ export default function NominasPage() {
   }
 
   // Formatear fecha para resumen
-  const formatFechaResumen = (fecha: Date | undefined) => {
+  const formatFechaResumen = (fecha: string) => {
     if (!fecha) return "—"
-    return format(fecha, "dd/MM/yyyy", { locale: es })
+    try {
+      const date = new Date(fecha + 'T12:00:00')
+      return format(date, "dd/MM/yyyy", { locale: es })
+    } catch {
+      return fecha
+    }
   }
 
   // Obtener texto del tipo de período
@@ -364,7 +427,60 @@ export default function NominasPage() {
             <RefreshCw className="mr-2 h-4 w-4" />
             Actualizar
           </Button>
-          <Button variant="outline">
+          <Button 
+            variant="outline" 
+            onClick={() => {
+              // Exportar nóminas a CSV
+              if (nominasFiltradas.length === 0) {
+                toast.error("No hay nóminas para exportar")
+                return
+              }
+              
+              const headers = [
+                "ID",
+                "Tipo Período",
+                "Fecha Inicio",
+                "Fecha Fin",
+                "Fecha Pago",
+                "Estado",
+                "Empleados",
+                "Total Devengado",
+                "Total Descuentos",
+                "Total Neto",
+                "Observaciones"
+              ]
+              
+              const rows = nominasFiltradas.map((nomina) => [
+                nomina.id,
+                getTipoPeriodoTexto(nomina.tipoPeriodo),
+                formatFecha(nomina.fechaInicio),
+                formatFecha(nomina.fechaFin),
+                formatFecha(nomina.fechaPago),
+                nomina.estado,
+                nomina.totalEmpleados.toString(),
+                nomina.totalDevengado.toFixed(2),
+                nomina.totalDescuentos.toFixed(2),
+                nomina.totalNeto.toFixed(2),
+                nomina.observaciones || ""
+              ])
+              
+              const csv = [headers, ...rows].map((row) => 
+                row.map((cell) => `"${cell}"`).join(",")
+              ).join("\n")
+              
+              const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+              const url = window.URL.createObjectURL(blob)
+              const link = document.createElement("a")
+              link.href = url
+              link.download = `nominas-${new Date().toISOString().split("T")[0]}.csv`
+              link.click()
+              window.URL.revokeObjectURL(url)
+              
+              toast.success("Nóminas exportadas", {
+                description: `Se exportaron ${nominasFiltradas.length} nóminas`,
+              })
+            }}
+          >
             <Download className="mr-2 h-4 w-4" />
             Exportar
           </Button>
@@ -632,7 +748,13 @@ export default function NominasPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-5 py-4">
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleGenerarNomina()
+            }}
+            className="space-y-5"
+          >
             {/* Tipo de Período */}
             <div className="space-y-2">
               <Label htmlFor="tipoPeriodo" className="text-sm font-medium">
@@ -673,97 +795,63 @@ export default function NominasPage() {
               <div className="grid grid-cols-2 gap-3">
                 {/* Fecha Inicio */}
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Desde</Label>
-                  <Popover modal={true}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        type="button"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !fechaInicio && "text-muted-foreground"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {fechaInicio ? format(fechaInicio, "dd/MM/yyyy", { locale: es }) : "Seleccionar"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0 z-[100]" align="start">
-                      <CalendarComponent
-                        mode="single"
-                        selected={fechaInicio}
-                        onSelect={(date) => {
-                          setFechaInicio(date)
-                          if (date && fechaFin && date > fechaFin) {
-                            setFechaFin(undefined)
-                            setFechaPago(undefined)
-                          }
-                        }}
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <Label htmlFor="fechaInicio" className="text-xs text-muted-foreground">
+                    Desde
+                  </Label>
+                  <Input
+                    id="fechaInicio"
+                    type="date"
+                    value={fechaInicio}
+                    onChange={(e) => {
+                      setFechaInicio(e.target.value)
+                      // Si la fecha inicio es mayor que fecha fin, limpiar fecha fin
+                      if (e.target.value && fechaFin && e.target.value > fechaFin) {
+                        setFechaFin("")
+                        setFechaPago("")
+                      }
+                    }}
+                    required
+                    className="w-full"
+                  />
                 </div>
 
                 {/* Fecha Fin */}
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Hasta</Label>
-                  <Popover modal={true}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        type="button"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !fechaFin && "text-muted-foreground"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {fechaFin ? format(fechaFin, "dd/MM/yyyy", { locale: es }) : "Seleccionar"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0 z-[100]" align="start">
-                      <CalendarComponent
-                        mode="single"
-                        selected={fechaFin}
-                        onSelect={(date) => {
-                          setFechaFin(date)
-                          setFechaPago(date)
-                        }}
-                        disabled={(date) => fechaInicio ? date < fechaInicio : false}
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <Label htmlFor="fechaFin" className="text-xs text-muted-foreground">
+                    Hasta
+                  </Label>
+                  <Input
+                    id="fechaFin"
+                    type="date"
+                    value={fechaFin}
+                    min={fechaInicio || undefined}
+                    onChange={(e) => {
+                      setFechaFin(e.target.value)
+                      // Si no hay fecha de pago, usar fecha fin como fecha de pago
+                      if (e.target.value && !fechaPago) {
+                        setFechaPago(e.target.value)
+                      }
+                    }}
+                    required
+                    className="w-full"
+                  />
                 </div>
               </div>
             </div>
 
             {/* Fecha de Pago */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium">
+              <Label htmlFor="fechaPago" className="text-sm font-medium">
                 Fecha de pago <span className="text-red-500">*</span>
               </Label>
-              <Popover modal={true}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    type="button"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !fechaPago && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {fechaPago ? format(fechaPago, "PPP", { locale: es }) : "Seleccionar fecha de pago"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 z-[100]" align="start">
-                  <CalendarComponent
-                    mode="single"
-                    selected={fechaPago}
-                    onSelect={setFechaPago}
-                  />
-                </PopoverContent>
-              </Popover>
+              <Input
+                id="fechaPago"
+                type="date"
+                value={fechaPago}
+                onChange={(e) => setFechaPago(e.target.value)}
+                required
+                className="w-full"
+              />
             </div>
 
             {/* Empleados Incluidos */}
@@ -821,61 +909,62 @@ export default function NominasPage() {
                 </SelectContent>
               </Select>
             </div>
-          </div>
 
-          {/* Resumen y Botones */}
-          <DialogFooter className="flex flex-col sm:flex-row gap-4 sm:gap-0">
-            {/* Mini resumen a la izquierda */}
-            {fechaInicio && fechaFin && (
-              <div className="flex-1 bg-muted/50 rounded-lg p-3 mr-0 sm:mr-4">
-                <p className="text-xs font-semibold text-muted-foreground mb-1.5">RESUMEN</p>
-                <div className="space-y-0.5 text-xs">
-                  <p>
-                    <span className="text-muted-foreground">Período:</span>{" "}
-                    <span className="font-medium">{formatFechaResumen(fechaInicio)} – {formatFechaResumen(fechaFin)}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Tipo:</span>{" "}
-                    <span className="font-medium">{getTipoPeriodoTexto(tipoPeriodo)}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Fecha de pago:</span>{" "}
-                    <span className="font-medium">{formatFechaResumen(fechaPago)}</span>
-                  </p>
+            {/* Resumen y Botones */}
+            <DialogFooter className="flex flex-col sm:flex-row gap-4 sm:gap-0 pt-4">
+              {/* Mini resumen a la izquierda */}
+              {fechaInicio && fechaFin && (
+                <div className="flex-1 bg-muted/50 rounded-lg p-3 mr-0 sm:mr-4">
+                  <p className="text-xs font-semibold text-muted-foreground mb-1.5">RESUMEN</p>
+                  <div className="space-y-0.5 text-xs">
+                    <p>
+                      <span className="text-muted-foreground">Período:</span>{" "}
+                      <span className="font-medium">{formatFechaResumen(fechaInicio)} – {formatFechaResumen(fechaFin)}</span>
+                    </p>
+                    <p>
+                      <span className="text-muted-foreground">Tipo:</span>{" "}
+                      <span className="font-medium">{getTipoPeriodoTexto(tipoPeriodo)}</span>
+                    </p>
+                    <p>
+                      <span className="text-muted-foreground">Fecha de pago:</span>{" "}
+                      <span className="font-medium">{formatFechaResumen(fechaPago)}</span>
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Botones */}
-            <div className="flex gap-2 sm:flex-shrink-0">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setModalOpen(false)
-                  resetModal()
-                }}
-                disabled={generando}
-              >
-                Cancelar
-              </Button>
-              <Button
-                onClick={handleGenerarNomina}
-                disabled={!fechaInicio || !fechaFin || !fechaPago || generando}
-              >
-                {generando ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Generando...
-                  </>
-                ) : (
-                  <>
-                    <FileText className="mr-2 h-4 w-4" />
-                    Generar nómina
-                  </>
-                )}
-              </Button>
-            </div>
-          </DialogFooter>
+              {/* Botones */}
+              <div className="flex gap-2 sm:flex-shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setModalOpen(false)
+                    resetModal()
+                  }}
+                  disabled={generando}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={!fechaInicio || !fechaFin || !fechaPago || generando}
+                >
+                  {generando ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generando...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="mr-2 h-4 w-4" />
+                      Generar nómina
+                    </>
+                  )}
+                </Button>
+              </div>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

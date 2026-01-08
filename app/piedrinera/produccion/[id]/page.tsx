@@ -9,6 +9,9 @@ import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { ArrowLeft, Edit, Factory, Calendar, MapPin, User, Clock, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
 import Link from "next/link"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet } from "@/lib/api-client"
+import { useToast } from "@/hooks/use-toast"
 
 interface VerProduccionPageProps {
   params: Promise<{
@@ -18,104 +21,107 @@ interface VerProduccionPageProps {
 
 interface LoteProduccion {
   id: string
+  codigo_lote: string
+  codigoLote: string
   fecha: string
-  agregado: string
-  cantera: string
+  fecha_produccion: string
+  agregado: {
+    id: string
+    codigo: string
+    nombre: string
+  }
+  agregado_nombre: string
+  volumen_planificado_m3: number
+  volumen_producido_m3: number
   volumenPlanificado: number
   volumenProducido: number
+  costo_total_q: number
+  costoTotal: number
   estado: string
-  calidad: string
-  operador: string
-  turno: string
-  equipos: string[]
-  observaciones: string
+  estado_display: string
+  calidad: string | null
+  supervisor: {
+    id: string
+    nombre: string
+  } | null
+  supervisor_nombre: string | null
+  operador: {
+    id: string
+    nombre: string
+  } | null
+  operador_nombre: string | null
+  hora_inicio_produccion: string
+  hora_fin_produccion: string | null
+  equipos_usados: string[]
+  equiposUsados: string[]
+  observaciones: string | null
+  eficiencia_produccion: number
+  costo_por_m3: number
+  duracion_produccion: number
 }
 
 export default function VerProduccionPage({ params }: VerProduccionPageProps) {
   const router = useRouter()
+  const { toast } = useToast()
   const { id } = use(params)
 
   const [lote, setLote] = useState<LoteProduccion | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const loadLote = async () => {
       try {
         setLoading(true)
+        setError(null)
 
-        // En una implementación real, aquí harías una llamada a la API
-        // const loteData = await apiGet(`${API_ENDPOINTS.PIEDRINERA.PRODUCCION}/${id}`)
+        const loteUrl = API_ENDPOINTS.PIEDRINERA.PRODUCCION.endsWith('/')
+          ? `${API_ENDPOINTS.PIEDRINERA.PRODUCCION}${id}/`
+          : `${API_ENDPOINTS.PIEDRINERA.PRODUCCION}/${id}/`
 
-        // Por ahora, simulamos buscar en los datos de ejemplo
-        const produccionData = [
-          {
-            id: "LOTE-001",
-            fecha: "2024-01-15",
-            agregado: "Arena Fina",
-            cantera: "Cantera San José",
-            volumenPlanificado: 150.0,
-            volumenProducido: 145.5,
-            estado: "Completado",
-            calidad: "Aprobada",
-            operador: "Juan Pérez",
-            turno: "Mañana",
-            equipos: ["Excavadora CAT-320", "Criba Vibratoria"],
-            observaciones: "Producción normal, calidad excelente",
-          },
-          {
-            id: "LOTE-002",
-            fecha: "2024-01-15",
-            agregado: 'Grava 3/4"',
-            cantera: "Cantera El Roble",
-            volumenPlanificado: 200.0,
-            volumenProducido: 180.0,
-            estado: "En Proceso",
-            calidad: "Pendiente",
-            operador: "María García",
-            turno: "Tarde",
-            equipos: ["Excavadora CAT-330", "Trituradora Primaria"],
-            observaciones: "En proceso de trituración",
-          },
-          {
-            id: "LOTE-003",
-            fecha: "2024-01-14",
-            agregado: 'Piedrín 1/2"',
-            cantera: "Cantera Los Ángeles",
-            volumenPlanificado: 120.0,
-            volumenProducido: 0.0,
-            estado: "Planificado",
-            calidad: "Pendiente",
-            operador: "Carlos López",
-            turno: "Noche",
-            equipos: ["Excavadora CAT-315", "Criba Secundaria"],
-            observaciones: "Programado para inicio mañana",
-          },
-          {
-            id: "LOTE-004",
-            fecha: "2024-01-14",
-            agregado: "Arena Gruesa",
-            cantera: "Cantera San José",
-            volumenPlanificado: 100.0,
-            volumenProducido: 95.0,
-            estado: "Completado",
-            calidad: "Rechazada",
-            operador: "Ana Rodríguez",
-            turno: "Mañana",
-            equipos: ["Excavadora CAT-320", "Lavadora de Arena"],
-            observaciones: "Rechazado por alto contenido de arcilla",
-          },
-        ]
+        const loteData = await apiGet<any>(loteUrl)
 
-        const loteEncontrado = produccionData.find(l => l.id === id)
-
-        if (!loteEncontrado) {
-          throw new Error("Lote de producción no encontrado")
+        // Mapear datos del backend al formato del frontend
+        const mappedLote: LoteProduccion = {
+          id: String(loteData.id || ''),
+          codigo_lote: loteData.codigo_lote || loteData.codigoLote || '',
+          codigoLote: loteData.codigo_lote || loteData.codigoLote || '',
+          fecha: loteData.fecha_produccion || loteData.fechaProduccion || loteData.fecha || '',
+          fecha_produccion: loteData.fecha_produccion || loteData.fechaProduccion || loteData.fecha || '',
+          agregado: loteData.agregado || { id: '', codigo: '', nombre: loteData.agregado_nombre || '' },
+          agregado_nombre: loteData.agregado_nombre || loteData.agregado?.nombre || '',
+          volumen_planificado_m3: Number(loteData.volumen_planificado_m3 ?? loteData.volumenPlanificado ?? loteData.volumenPlanificadoM3 ?? 0) || 0,
+          volumen_producido_m3: Number(loteData.volumen_producido_m3 ?? loteData.volumenProducido ?? loteData.volumenProducidoM3 ?? 0) || 0,
+          volumenPlanificado: Number(loteData.volumen_planificado_m3 ?? loteData.volumenPlanificado ?? loteData.volumenPlanificadoM3 ?? 0) || 0,
+          volumenProducido: Number(loteData.volumen_producido_m3 ?? loteData.volumenProducido ?? loteData.volumenProducidoM3 ?? 0) || 0,
+          costo_total_q: Number(loteData.costo_total_q ?? loteData.costoTotal ?? loteData.costoTotalQ ?? 0) || 0,
+          costoTotal: Number(loteData.costo_total_q ?? loteData.costoTotal ?? loteData.costoTotalQ ?? 0) || 0,
+          estado: loteData.estado || '',
+          estado_display: loteData.estado_display || loteData.estado || '',
+          calidad: loteData.calidad || null,
+          supervisor: loteData.supervisor || null,
+          supervisor_nombre: loteData.supervisor_nombre || loteData.supervisor?.nombre || null,
+          operador: loteData.operador || null,
+          operador_nombre: loteData.operador_nombre || loteData.operador?.nombre || null,
+          hora_inicio_produccion: loteData.hora_inicio_produccion || loteData.horaInicio || loteData.horaInicioProduccion || '',
+          hora_fin_produccion: loteData.hora_fin_produccion || loteData.horaFin || loteData.horaFinProduccion || null,
+          equipos_usados: loteData.equipos_usados || loteData.equiposUsados || [],
+          equiposUsados: loteData.equipos_usados || loteData.equiposUsados || [],
+          observaciones: loteData.observaciones || null,
+          eficiencia_produccion: Number(loteData.eficiencia_produccion ?? 0) || 0,
+          costo_por_m3: Number(loteData.costo_por_m3 ?? 0) || 0,
+          duracion_produccion: Number(loteData.duracion_produccion ?? 0) || 0,
         }
 
-        setLote(loteEncontrado)
-      } catch (error: any) {
-        console.error('Error al cargar lote:', error)
-        // En una implementación real, mostrarías un toast de error
+        setLote(mappedLote)
+      } catch (err: any) {
+        console.error('Error al cargar lote:', err)
+        setError(err.message || 'No se pudo cargar el lote de producción')
+        toast({
+          title: "Error",
+          description: err.message || "No se pudo cargar el lote de producción.",
+          variant: "destructive",
+        })
         router.replace("/piedrinera/produccion")
       } finally {
         setLoading(false)
@@ -123,7 +129,7 @@ export default function VerProduccionPage({ params }: VerProduccionPageProps) {
     }
 
     loadLote()
-  }, [id, router])
+  }, [id, router, toast])
 
   if (loading) {
     return (
@@ -136,24 +142,34 @@ export default function VerProduccionPage({ params }: VerProduccionPageProps) {
     )
   }
 
-  if (!lote) {
-    return null
+  if (error || !lote) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4">
+        <h1 className="text-3xl font-bold">Lote no encontrado</h1>
+        <p className="text-muted-foreground">
+          {error || `El lote con ID ${id} no existe.`}
+        </p>
+        <Button onClick={() => router.push("/piedrinera/produccion")}>Volver a Producción</Button>
+      </div>
+    )
   }
 
-  const progreso = lote.volumenPlanificado > 0 ? (lote.volumenProducido / lote.volumenPlanificado) * 100 : 0
-  const eficiencia = lote.volumenPlanificado > 0 ? (lote.volumenProducido / lote.volumenPlanificado) * 100 : 0
+  const progreso = lote.volumen_planificado_m3 > 0 ? (lote.volumen_producido_m3 / lote.volumen_planificado_m3) * 100 : 0
+  const eficiencia = lote.eficiencia_produccion || progreso
 
-  const estadoColors = {
-    Completado: "bg-green-100 text-green-800",
-    "En Proceso": "bg-blue-100 text-blue-800",
-    Planificado: "bg-yellow-100 text-yellow-800",
-    Suspendido: "bg-red-100 text-red-800",
+  const estadoColors: Record<string, string> = {
+    COMPLETADO: "bg-green-100 text-green-800",
+    EN_PROCESO: "bg-blue-100 text-blue-800",
+    CANCELADO: "bg-red-100 text-red-800",
   }
 
-  const calidadColors = {
+  const calidadColors: Record<string, string> = {
     Aprobada: "bg-green-100 text-green-800",
     Rechazada: "bg-red-100 text-red-800",
     Pendiente: "bg-gray-100 text-gray-800",
+    Buena: "bg-green-100 text-green-800",
+    Excelente: "bg-green-100 text-green-800",
+    Regular: "bg-yellow-100 text-yellow-800",
   }
 
   return (
@@ -167,8 +183,8 @@ export default function VerProduccionPage({ params }: VerProduccionPageProps) {
             </Button>
           </Link>
           <div>
-            <h1 className="text-3xl font-bold">Lote {lote.id}</h1>
-            <p className="text-muted-foreground">{lote.agregado} - {lote.cantera}</p>
+            <h1 className="text-3xl font-bold">Lote {lote.codigo_lote}</h1>
+            <p className="text-muted-foreground">{lote.agregado_nombre}</p>
           </div>
         </div>
         <Link href={`/piedrinera/produccion/${lote.id}/editar`}>
@@ -183,15 +199,15 @@ export default function VerProduccionPage({ params }: VerProduccionPageProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Estado</CardTitle>
-            {lote.estado === "Completado" ? (
+            {lote.estado === "COMPLETADO" ? (
               <CheckCircle className="h-4 w-4 text-green-500" />
             ) : (
               <Clock className="h-4 w-4 text-blue-500" />
             )}
           </CardHeader>
           <CardContent>
-            <Badge className={`${estadoColors[lote.estado as keyof typeof estadoColors]} text-base px-3 py-1`}>
-              {lote.estado}
+            <Badge className={`${estadoColors[lote.estado] || "bg-gray-100 text-gray-800"} text-base px-3 py-1`}>
+              {lote.estado_display}
             </Badge>
           </CardContent>
         </Card>
@@ -202,9 +218,9 @@ export default function VerProduccionPage({ params }: VerProduccionPageProps) {
             <Factory className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{lote.volumenProducido} m³</div>
+            <div className="text-2xl font-bold">{lote.volumen_producido_m3.toFixed(2)} m³</div>
             <p className="text-xs text-muted-foreground">
-              de {lote.volumenPlanificado} m³ planificados
+              de {lote.volumen_planificado_m3.toFixed(2)} m³ planificados
             </p>
           </CardContent>
         </Card>
@@ -223,7 +239,7 @@ export default function VerProduccionPage({ params }: VerProduccionPageProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Calidad</CardTitle>
-            {lote.calidad === "Aprobada" ? (
+            {lote.calidad === "Aprobada" || lote.calidad === "Buena" || lote.calidad === "Excelente" ? (
               <CheckCircle className="h-4 w-4 text-green-500" />
             ) : lote.calidad === "Rechazada" ? (
               <AlertCircle className="h-4 w-4 text-red-500" />
@@ -232,9 +248,13 @@ export default function VerProduccionPage({ params }: VerProduccionPageProps) {
             )}
           </CardHeader>
           <CardContent>
-            <Badge className={`${calidadColors[lote.calidad as keyof typeof calidadColors]} text-base px-3 py-1`}>
-              {lote.calidad}
-            </Badge>
+            {lote.calidad ? (
+              <Badge className={`${calidadColors[lote.calidad] || "bg-gray-100 text-gray-800"} text-base px-3 py-1`}>
+                {lote.calidad}
+              </Badge>
+            ) : (
+              <p className="text-sm text-muted-foreground">Sin calificar</p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -248,44 +268,46 @@ export default function VerProduccionPage({ params }: VerProduccionPageProps) {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">ID del Lote</p>
-                <p className="text-base font-semibold">{lote.id}</p>
+                <p className="text-base font-semibold">{lote.codigo_lote}</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Fecha</p>
                 <p className="text-base font-semibold flex items-center">
                   <Calendar className="h-4 w-4 mr-2" />
-                  {new Date(lote.fecha).toLocaleDateString("es-GT", {
+                  {lote.fecha ? new Date(lote.fecha).toLocaleDateString("es-GT", {
                     year: "numeric",
                     month: "long",
                     day: "numeric",
-                  })}
+                  }) : ''}
                 </p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Agregado</p>
-                <p className="text-base font-semibold">{lote.agregado}</p>
+                <p className="text-base font-semibold">{lote.agregado_nombre}</p>
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Cantera</p>
+                <p className="text-sm font-medium text-muted-foreground">Supervisor</p>
                 <p className="text-base font-semibold flex items-center">
-                  <MapPin className="h-4 w-4 mr-2" />
-                  {lote.cantera}
+                  <User className="h-4 w-4 mr-2" />
+                  {lote.supervisor_nombre || 'No asignado'}
                 </p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Operador</p>
                 <p className="text-base font-semibold flex items-center">
                   <User className="h-4 w-4 mr-2" />
-                  {lote.operador}
+                  {lote.operador_nombre || 'No asignado'}
                 </p>
               </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Turno</p>
-                <p className="text-base font-semibold flex items-center">
-                  <Clock className="h-4 w-4 mr-2" />
-                  {lote.turno}
-                </p>
-              </div>
+              {lote.hora_inicio_produccion && (
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Hora Inicio</p>
+                  <p className="text-base font-semibold flex items-center">
+                    <Clock className="h-4 w-4 mr-2" />
+                    {lote.hora_inicio_produccion}
+                  </p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -298,11 +320,11 @@ export default function VerProduccionPage({ params }: VerProduccionPageProps) {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Volumen Planificado</p>
-                <p className="text-2xl font-bold">{lote.volumenPlanificado} m³</p>
+                <p className="text-2xl font-bold">{lote.volumen_planificado_m3.toFixed(2)} m³</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Volumen Producido</p>
-                <p className="text-2xl font-bold">{lote.volumenProducido} m³</p>
+                <p className="text-2xl font-bold">{lote.volumen_producido_m3.toFixed(2)} m³</p>
               </div>
             </div>
             <Separator />
@@ -319,47 +341,59 @@ export default function VerProduccionPage({ params }: VerProduccionPageProps) {
                 <p className="text-lg font-semibold text-green-600">{eficiencia.toFixed(1)}%</p>
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Estado</p>
-                <Badge className={estadoColors[lote.estado as keyof typeof estadoColors]}>
-                  {lote.estado}
-                </Badge>
+                <p className="text-sm font-medium text-muted-foreground">Costo Total</p>
+                <p className="text-lg font-semibold">Q {lote.costo_total_q.toFixed(2)}</p>
               </div>
+              {lote.volumen_producido_m3 > 0 && (
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Costo por m³</p>
+                  <p className="text-lg font-semibold">Q {lote.costo_por_m3.toFixed(2)}</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Equipos Utilizados</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {lote.equipos.map((equipo, index) => (
-                <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                  <Factory className="h-5 w-5 text-blue-500" />
-                  <span className="text-sm font-medium">{equipo}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        {lote.equipos_usados && lote.equipos_usados.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Equipos Utilizados</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {lote.equipos_usados.map((equipo, index) => (
+                  <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <Factory className="h-5 w-5 text-blue-500" />
+                    <span className="text-sm font-medium">{equipo}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
             <CardTitle>Calidad y Observaciones</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground mb-2">Estado de Calidad</p>
-              <Badge className={`${calidadColors[lote.calidad as keyof typeof calidadColors]} text-base px-3 py-1`}>
-                {lote.calidad}
-              </Badge>
-            </div>
-            <Separator />
-            <div>
-              <p className="text-sm font-medium text-muted-foreground mb-2">Observaciones</p>
-              <p className="text-sm bg-gray-50 p-3 rounded-lg">{lote.observaciones}</p>
-            </div>
+            {lote.calidad && (
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-2">Estado de Calidad</p>
+                <Badge className={`${calidadColors[lote.calidad] || "bg-gray-100 text-gray-800"} text-base px-3 py-1`}>
+                  {lote.calidad}
+                </Badge>
+              </div>
+            )}
+            {lote.observaciones && (
+              <>
+                {lote.calidad && <Separator />}
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground mb-2">Observaciones</p>
+                  <p className="text-sm bg-gray-50 p-3 rounded-lg">{lote.observaciones}</p>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -205,7 +205,17 @@ export default function PiedrinerapProductosPage() {
           <p className="text-muted-foreground">Gestión de arena, grava, piedrín y otros agregados</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
+          <Button 
+            variant="outline" 
+            onClick={() => {
+              // Por ahora, el filtrado se hace con la búsqueda
+              // Este botón puede expandirse en el futuro para filtros avanzados
+              toast({
+                title: "Filtros",
+                description: "Usa el campo de búsqueda para filtrar productos por nombre, código, tipo o proveedor.",
+              })
+            }}
+          >
             <Filter className="mr-2 h-4 w-4" />
             Filtros
           </Button>
@@ -303,9 +313,11 @@ export default function PiedrinerapProductosPage() {
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem>
-                        <Package className="mr-2 h-4 w-4" />
-                        Ajustar Stock
+                      <DropdownMenuItem asChild>
+                        <Link href={`/piedrinera/inventario/${agregado.id}/ajustar`}>
+                          <Package className="mr-2 h-4 w-4" />
+                          Ajustar Stock
+                        </Link>
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

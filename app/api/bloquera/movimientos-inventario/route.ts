@@ -118,6 +118,107 @@ export async function POST(request: NextRequest) {
     // Obtener el cuerpo de la petición
     const body = await request.json()
 
+    // Convertir campos camelCase a snake_case para Django (si es necesario)
+    // Django espera: producto (ID), tipo, cantidad, motivo, observaciones (opcional)
+    // El usuario se asigna automáticamente desde el token en Django
+    const productoId = body.producto || body.producto_id
+    
+    // Asegurar que productoId sea un número
+    if (!productoId) {
+      return NextResponse.json(
+        { error: 'El campo producto es requerido' },
+        { status: 400 }
+      )
+    }
+
+    const djangoBody: any = {
+      producto: Number(productoId), // Asegurar que sea un número
+      tipo: body.tipo,
+      cantidad: Number(body.cantidad), // Asegurar que sea un número
+    }
+
+    // Manejar motivo: si viene como string vacío, enviar null; si tiene contenido, enviar el string
+    if (body.motivo !== undefined && body.motivo !== null) {
+      const motivoTrimmed = String(body.motivo).trim()
+      djangoBody.motivo = motivoTrimmed || null
+    } else if (body.razon !== undefined && body.razon !== null) {
+      const razonTrimmed = String(body.razon).trim()
+      djangoBody.motivo = razonTrimmed || null
+    } else {
+      djangoBody.motivo = null
+    }
+
+    // Manejar observaciones: si viene como string vacío, enviar null; si tiene contenido, enviar el string
+    if (body.observaciones !== undefined && body.observaciones !== null) {
+      const obsTrimmed = String(body.observaciones).trim()
+      djangoBody.observaciones = obsTrimmed || null
+    } else if (body.referencia !== undefined && body.referencia !== null) {
+      const refTrimmed = String(body.referencia).trim()
+      djangoBody.observaciones = refTrimmed || null
+    } else {
+      djangoBody.observaciones = null
+    }
+
+    // Remover campos undefined y null (excepto motivo y observaciones que pueden ser null)
+    Object.keys(djangoBody).forEach(key => {
+      if (djangoBody[key] === undefined) {
+        delete djangoBody[key]
+      }
+    })
+
+    // Validar campos requeridos
+    if (!djangoBody.tipo) {
+      return NextResponse.json(
+        { error: 'El campo tipo es requerido' },
+        { status: 400 }
+      )
+    }
+
+    // Validar que el tipo sea uno de los valores permitidos
+    const tiposValidos = ['ENTRADA', 'SALIDA', 'AJUSTE', 'TRANSFERENCIA', 'DEVOLUCION']
+    if (!tiposValidos.includes(djangoBody.tipo)) {
+      return NextResponse.json(
+        { error: `El tipo de movimiento debe ser uno de: ${tiposValidos.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    if (djangoBody.cantidad === undefined || djangoBody.cantidad === null || isNaN(djangoBody.cantidad)) {
+      return NextResponse.json(
+        { error: 'El campo cantidad es requerido y debe ser un número válido' },
+        { status: 400 }
+      )
+    }
+
+    // Validar cantidad según tipo de movimiento
+    // Para AJUSTE, la cantidad puede ser positiva o negativa, pero no puede ser 0
+    if (djangoBody.tipo === 'AJUSTE') {
+      if (djangoBody.cantidad === 0) {
+        return NextResponse.json(
+          { error: 'La cantidad de ajuste no puede ser 0' },
+          { status: 400 }
+        )
+      }
+    } else if (['ENTRADA', 'SALIDA', 'DEVOLUCION', 'TRANSFERENCIA'].includes(djangoBody.tipo)) {
+      // Para otros tipos, la cantidad debe ser positiva
+      if (djangoBody.cantidad <= 0) {
+        return NextResponse.json(
+          { error: 'La cantidad debe ser mayor a 0 para este tipo de movimiento' },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Log para debugging
+    console.log('[BLOQUERA API] Creando movimiento:', {
+      bodyOriginal: body,
+      djangoBody,
+      productoId: typeof productoId,
+      cantidadType: typeof djangoBody.cantidad,
+      cantidadValue: djangoBody.cantidad,
+      tipo: djangoBody.tipo,
+    })
+
     // Hacer proxy a Django
     const response = await fetch(`${DJANGO_API_URL}/api/bloquera/movimientos-inventario/`, {
       method: 'POST',
@@ -125,13 +226,36 @@ export async function POST(request: NextRequest) {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(djangoBody),
     })
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
+      const errorText = await response.text()
+      let errorData: any = {}
+      try {
+        errorData = JSON.parse(errorText)
+      } catch {
+        errorData = { error: errorText || `Error ${response.status}: ${response.statusText}` }
+      }
+      
+      // Log para debugging
+      console.error('[BLOQUERA API] Error de Django al crear movimiento:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorText,
+        errorData,
+        djangoBody,
+        bodyOriginal: body,
+      })
+      
+      // Si errorData es un objeto con campos de validación, mantenerlo tal cual
+      // Si es un string o tiene un campo 'error', mantenerlo
+      const responseError = errorData && typeof errorData === 'object' && Object.keys(errorData).length > 0
+        ? errorData
+        : { error: errorText || `Error ${response.status}: ${response.statusText}` }
+      
       return NextResponse.json(
-        errorData || { error: 'Error al crear movimiento de inventario' },
+        responseError,
         { status: response.status }
       )
     }

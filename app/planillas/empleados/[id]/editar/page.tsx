@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { Multiselect, type MultiselectOption } from "@/components/ui/multiselect"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { API_ENDPOINTS } from "@/lib/api-config"
@@ -31,7 +32,8 @@ interface Empleado {
   cedula: string
   telefono?: string
   email?: string
-  cargo: string
+  cargo?: string
+  cargos?: any[]
   salario: number
   fechaIngreso: string
   activo: boolean
@@ -54,7 +56,9 @@ export default function EditarEmpleadoPage({ params }: EditarEmpleadoPageProps) 
   const [nit, setNit] = useState<string>("")
   const [telefono, setTelefono] = useState<string>("")
   const [email, setEmail] = useState<string>("")
-  const [cargo, setCargo] = useState<string>("")
+  const [cargosSeleccionados, setCargosSeleccionados] = useState<string[]>([])
+  const [cargosOptions, setCargosOptions] = useState<MultiselectOption[]>([])
+  const [loadingCargos, setLoadingCargos] = useState(false)
   const [areaTrabajo, setAreaTrabajo] = useState<string>("")
   const [turno, setTurno] = useState<string>("")
   const [tipoContrato, setTipoContrato] = useState<string>("")
@@ -64,12 +68,44 @@ export default function EditarEmpleadoPage({ params }: EditarEmpleadoPageProps) 
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
-  // Cargar empleado desde la API
+  // Cargar cargos desde la API
   useEffect(() => {
+    const loadCargos = async () => {
+      try {
+        setLoadingCargos(true)
+        const response = await apiGet(API_ENDPOINTS.PLANILLAS.CARGOS)
+        const options: MultiselectOption[] = (response as any[]).map((cargo: any) => ({
+          value: cargo.id.toString(),
+          label: cargo.nombre,
+          description: cargo.descripcion || undefined,
+        }))
+        setCargosOptions(options)
+      } catch (error) {
+        console.error('Error al cargar cargos:', error)
+        toast({
+          title: "Error",
+          description: "No se pudieron cargar los cargos disponibles.",
+          variant: "destructive",
+        })
+      } finally {
+        setLoadingCargos(false)
+      }
+    }
+
+    loadCargos()
+  }, [toast])
+
+  // Cargar empleado desde la API (solo cuando los cargos estén cargados)
+  useEffect(() => {
+    if (cargosOptions.length === 0 && !loadingCargos) {
+      // Esperar a que los cargos se carguen primero
+      return
+    }
+
     const loadEmpleado = async () => {
       try {
         setLoading(true)
-        const empleadoData = await apiGet<Empleado>(`${API_ENDPOINTS.PLANILLAS.EMPLEADOS}/${id}`)
+        const empleadoData = await apiGet<Empleado>(API_ENDPOINTS.PLANILLAS.EMPLEADO(id))
         
         setCodigo(empleadoData.codigo || "")
         setNombres(empleadoData.nombres || "")
@@ -78,7 +114,25 @@ export default function EditarEmpleadoPage({ params }: EditarEmpleadoPageProps) 
         setNit(empleadoData.nit || "")
         setTelefono(empleadoData.telefono || "")
         setEmail(empleadoData.email || "")
-        setCargo(empleadoData.cargo || "")
+        
+        // Manejar cargos: puede venir como array o como string
+        if (empleadoData.cargos && Array.isArray(empleadoData.cargos)) {
+          // Si viene como array de objetos con id
+          const cargoIds = empleadoData.cargos.map((c: any) => {
+            if (typeof c === 'object' && c.id) {
+              return c.id.toString()
+            }
+            return c.toString()
+          })
+          setCargosSeleccionados(cargoIds)
+        } else if (empleadoData.cargo) {
+          // Si viene como string, buscar el ID del cargo en las opciones
+          const cargoEncontrado = cargosOptions.find(c => c.label === empleadoData.cargo)
+          if (cargoEncontrado) {
+            setCargosSeleccionados([cargoEncontrado.value])
+          }
+        }
+        
         setAreaTrabajo(empleadoData.areaTrabajo || "")
         setTurno(empleadoData.turno || "")
         setTipoContrato(empleadoData.tipoContrato || "")
@@ -113,15 +167,15 @@ export default function EditarEmpleadoPage({ params }: EditarEmpleadoPageProps) 
     }
 
     loadEmpleado()
-  }, [id, router, toast, logout])
+  }, [id, router, toast, logout, cargosOptions, loadingCargos])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!codigo || !nombres || !apellidos || !cargo || !fechaIngreso || salario < 0) {
+    if (!codigo || !nombres || !apellidos || cargosSeleccionados.length === 0 || !fechaIngreso || salario < 0) {
       toast({
         title: "Error de validación",
-        description: "Por favor, completa los campos obligatorios (Código, Nombres, Apellidos, Cargo, Fecha de Ingreso y Salario).",
+        description: "Por favor, completa los campos obligatorios (Código, Nombres, Apellidos, al menos un Cargo, Fecha de Ingreso y Salario).",
         variant: "destructive",
       })
       return
@@ -131,6 +185,7 @@ export default function EditarEmpleadoPage({ params }: EditarEmpleadoPageProps) 
       setSubmitting(true)
 
       // Preparar los datos según lo que espera el backend Django
+      // El serializer mapea estos campos a los nombres reales de la base de datos
       const empleadoData = {
         codigo_empleado: codigo,
         nombres,
@@ -139,7 +194,8 @@ export default function EditarEmpleadoPage({ params }: EditarEmpleadoPageProps) 
         nit: nit || null,
         telefono: telefono || null,
         email: email || null,
-        puesto: cargo,
+        // Enviar los IDs de los cargos seleccionados
+        cargos: cargosSeleccionados.map(id => parseInt(id)),
         area_trabajo: areaTrabajo || null,
         turno: turno || null,
         tipo_contrato: tipoContrato || null,
@@ -148,7 +204,7 @@ export default function EditarEmpleadoPage({ params }: EditarEmpleadoPageProps) 
         activo,
       }
 
-      await apiPut(`${API_ENDPOINTS.PLANILLAS.EMPLEADOS}/${id}`, empleadoData)
+      await apiPut(API_ENDPOINTS.PLANILLAS.EMPLEADO(id), empleadoData)
 
       toast({
         title: "Empleado Actualizado",
@@ -157,26 +213,28 @@ export default function EditarEmpleadoPage({ params }: EditarEmpleadoPageProps) 
       router.push(`/planillas/empleados/${id}`)
     } catch (error: any) {
       console.error("Error al actualizar empleado:", error)
-      
+
+      let errorMessage = error.message || "Error al actualizar el empleado. Por favor, inténtelo de nuevo."
+
       if (error.status === 401 || error.code === 'token_invalid') {
+        errorMessage = "Tu sesión ha expirado. Por favor, inicia sesión nuevamente."
         toast({
           title: "Sesión Expirada",
-          description: "Tu sesión ha expirado. Por favor, inicia sesión nuevamente.",
+          description: errorMessage,
           variant: "destructive",
         })
+        // Limpiar sesión y redirigir al login
         logout()
         setTimeout(() => {
           router.push("/login")
         }, 2000)
         return
-      }
-      
-      let errorMessage = error.message || "Error al actualizar el empleado. Por favor, inténtelo de nuevo."
-      
-      if (error.status === 400) {
+      } else if (error.status === 400) {
         errorMessage = "Los datos proporcionados no son válidos. Verifica que todos los campos estén correctamente completados."
+      } else if (error.status === 404) {
+        errorMessage = "El empleado no fue encontrado. Por favor, verifica que el empleado exista."
       }
-      
+
       toast({
         title: "Error",
         description: errorMessage,
@@ -206,9 +264,9 @@ export default function EditarEmpleadoPage({ params }: EditarEmpleadoPageProps) 
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <h1 className="text-3xl font-bold">Editar Empleado: {nombres} {apellidos}</h1>
+        <h1 className="text-3xl font-bold">Editar Empleado</h1>
       </div>
-      <p className="text-muted-foreground">Modifica la información del empleado.</p>
+      <p className="text-muted-foreground">Modifica la información del empleado en el sistema de planillas.</p>
 
       <form onSubmit={handleSubmit} className="grid gap-6">
         {/* Información Personal */}
@@ -294,33 +352,18 @@ export default function EditarEmpleadoPage({ params }: EditarEmpleadoPageProps) 
             <CardTitle>Información Laboral</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="cargo">Cargo / Puesto *</Label>
-              <Select value={cargo} onValueChange={setCargo} required>
-                <SelectTrigger id="cargo">
-                  <SelectValue placeholder="Selecciona un puesto" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Gerente General">Gerente General</SelectItem>
-                  <SelectItem value="Gerente de Operaciones">Gerente de Operaciones</SelectItem>
-                  <SelectItem value="Supervisor">Supervisor</SelectItem>
-                  <SelectItem value="Jefe de Producción">Jefe de Producción</SelectItem>
-                  <SelectItem value="Jefe de Bodega">Jefe de Bodega</SelectItem>
-                  <SelectItem value="Operador de Maquinaria">Operador de Maquinaria</SelectItem>
-                  <SelectItem value="Operador de Producción">Operador de Producción</SelectItem>
-                  <SelectItem value="Conductor">Conductor</SelectItem>
-                  <SelectItem value="Ayudante de Producción">Ayudante de Producción</SelectItem>
-                  <SelectItem value="Mecánico">Mecánico</SelectItem>
-                  <SelectItem value="Vendedor">Vendedor</SelectItem>
-                  <SelectItem value="Cajero">Cajero</SelectItem>
-                  <SelectItem value="Contador">Contador</SelectItem>
-                  <SelectItem value="Asistente Administrativo">Asistente Administrativo</SelectItem>
-                  <SelectItem value="Secretaria">Secretaria</SelectItem>
-                  <SelectItem value="Vigilante">Vigilante</SelectItem>
-                  <SelectItem value="Mantenimiento">Mantenimiento</SelectItem>
-                  <SelectItem value="Otro">Otro</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid gap-2 md:col-span-2">
+              <Label htmlFor="cargos">Cargos / Puestos *</Label>
+              <Multiselect
+                options={cargosOptions}
+                value={cargosSeleccionados}
+                onValueChange={setCargosSeleccionados}
+                placeholder="Selecciona uno o más cargos"
+                searchPlaceholder="Buscar cargos..."
+                emptyMessage="No se encontraron cargos."
+                loading={loadingCargos}
+                disabled={loadingCargos}
+              />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="areaTrabajo">Área de Trabajo</Label>
@@ -403,10 +446,10 @@ export default function EditarEmpleadoPage({ params }: EditarEmpleadoPageProps) 
             {submitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Guardando...
+                Actualizando...
               </>
             ) : (
-              "Guardar Cambios"
+              "Actualizar Empleado"
             )}
           </Button>
         </div>
@@ -414,4 +457,3 @@ export default function EditarEmpleadoPage({ params }: EditarEmpleadoPageProps) 
     </div>
   )
 }
-

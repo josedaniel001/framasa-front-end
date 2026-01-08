@@ -51,7 +51,11 @@ export default function EditarAgregadoPiedrineraPage({ params }: EditarAgregadoP
     const loadAgregado = async () => {
       try {
         setLoading(true)
-        const agregado = await apiGet<any>(`${API_ENDPOINTS.PIEDRINERA.PRODUCTOS}/${id}`)
+        // Construir URL correctamente para evitar dobles slashes
+        const productoUrl = API_ENDPOINTS.PIEDRINERA.PRODUCTOS.endsWith('/') 
+          ? `${API_ENDPOINTS.PIEDRINERA.PRODUCTOS}${id}/`
+          : `${API_ENDPOINTS.PIEDRINERA.PRODUCTOS}/${id}/`
+        const agregado = await apiGet<any>(productoUrl)
 
         setCodigo(agregado.codigo || "")
         setNombre(agregado.nombre || "")
@@ -126,7 +130,11 @@ export default function EditarAgregadoPiedrineraPage({ params }: EditarAgregadoP
         activo,
       }
 
-      await apiPut(`${API_ENDPOINTS.PIEDRINERA.PRODUCTOS}/${id}`, updatedAgregado)
+      // Construir URL correctamente para evitar dobles slashes
+      const productoUrl = API_ENDPOINTS.PIEDRINERA.PRODUCTOS.endsWith('/') 
+        ? `${API_ENDPOINTS.PIEDRINERA.PRODUCTOS}${id}/`
+        : `${API_ENDPOINTS.PIEDRINERA.PRODUCTOS}/${id}/`
+      await apiPut(productoUrl, updatedAgregado)
 
       toast({
         title: "Agregado Actualizado",

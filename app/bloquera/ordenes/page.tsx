@@ -1,46 +1,95 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { PlusCircle, Search, ClipboardList, Clock, PlayCircle, CheckCircle, Eye, Edit } from "lucide-react"
+import { PlusCircle, Search, ClipboardList, Clock, PlayCircle, CheckCircle, Eye, Edit, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import Link from "next/link"
-import { getSampleOrdenesProduccionBloquera } from "@/lib/sample-data"
+import { API_ENDPOINTS } from "@/lib/api-config"
+import { apiGet } from "@/lib/api-client"
+import { useToast } from "@/hooks/use-toast"
+
+interface OrdenProduccion {
+  id: string
+  codigo: string
+  productoId: string
+  nombreProducto: string
+  cantidadSolicitada: number
+  cantidadProducida: number
+  fechaInicio: string
+  fechaFinEstimada?: string
+  fechaCreacion: string
+  estado: string
+  estadoDisplay: string
+  responsable?: string
+  progreso: number
+}
 
 export default function OrdenesBloqueraPage() {
-  const ordenes = getSampleOrdenesProduccionBloquera()
+  const { toast } = useToast()
+  const [ordenes, setOrdenes] = useState<OrdenProduccion[]>([])
+  const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
+
+  useEffect(() => {
+    loadOrdenes()
+  }, [])
+
+  const loadOrdenes = async () => {
+    try {
+      setLoading(true)
+      const data = await apiGet<OrdenProduccion[]>(API_ENDPOINTS.BLOQUERA.ORDENES_PRODUCCION)
+      setOrdenes(data)
+    } catch (error: any) {
+      console.error("Error al cargar órdenes:", error)
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las órdenes de producción",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const filteredOrdenes = ordenes.filter(
     (orden) =>
       orden.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       orden.nombreProducto.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      orden.estado.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      orden.responsable.toLowerCase().includes(searchTerm.toLowerCase()),
+      (orden.estadoDisplay || orden.estado).toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (orden.responsable || "").toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
   const totalOrdenes = ordenes.length
-  const ordenesPendientes = ordenes.filter((o) => o.estado === "Pendiente").length
-  const ordenesEnProceso = ordenes.filter((o) => o.estado === "En Proceso").length
-  const ordenesCompletadas = ordenes.filter((o) => o.estado === "Completada").length
+  const ordenesPendientes = ordenes.filter((o) => o.estado === "PENDIENTE").length
+  const ordenesEnProceso = ordenes.filter((o) => o.estado === "EN_PROCESO").length
+  const ordenesCompletadas = ordenes.filter((o) => o.estado === "COMPLETADA").length
 
   const getStatusVariant = (status: string) => {
     switch (status) {
-      case "Completada":
+      case "COMPLETADA":
         return "default"
-      case "En Proceso":
+      case "EN_PROCESO":
         return "secondary"
-      case "Pendiente":
+      case "PENDIENTE":
         return "outline"
-      case "Cancelada":
+      case "CANCELADA":
         return "destructive"
       default:
         return "outline"
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
   return (
@@ -113,7 +162,6 @@ export default function OrdenesBloqueraPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <Button variant="outline">Filtrar</Button>
           </div>
           <Table>
             <TableHeader>
@@ -130,9 +178,9 @@ export default function OrdenesBloqueraPage() {
             </TableHeader>
             <TableBody>
               {filteredOrdenes.map((orden) => {
-                const progreso = orden.cantidadSolicitada > 0
+                const progreso = orden.progreso || (orden.cantidadSolicitada > 0
                   ? Math.min((orden.cantidadProducida / orden.cantidadSolicitada) * 100, 100)
-                  : 0
+                  : 0)
                 const tieneExcedente = orden.cantidadProducida > orden.cantidadSolicitada
 
                 return (
@@ -168,9 +216,11 @@ export default function OrdenesBloqueraPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={getStatusVariant(orden.estado)}>{orden.estado}</Badge>
+                      <Badge variant={getStatusVariant(orden.estado)}>
+                        {orden.estadoDisplay || orden.estado}
+                      </Badge>
                     </TableCell>
-                    <TableCell>{orden.fechaCreacion}</TableCell>
+                    <TableCell>{new Date(orden.fechaCreacion).toLocaleDateString("es-GT")}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Link href={`/bloquera/ordenes/${orden.id}`}>
@@ -193,7 +243,9 @@ export default function OrdenesBloqueraPage() {
             </TableBody>
           </Table>
           {filteredOrdenes.length === 0 && (
-            <p className="text-center text-muted-foreground mt-4">No se encontraron órdenes de producción.</p>
+            <p className="text-center text-muted-foreground mt-4">
+              {searchTerm ? "No se encontraron órdenes que coincidan con la búsqueda." : "No hay órdenes de producción registradas."}
+            </p>
           )}
         </CardContent>
       </Card>

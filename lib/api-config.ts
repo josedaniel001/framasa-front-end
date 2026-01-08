@@ -91,6 +91,12 @@ export const API_ENDPOINTS = {
     get MOVIMIENTOS_INVENTARIO() {
       return djangoApiEndpoint('/api/bloquera/movimientos-inventario/')
     },
+    get ORDENES_PRODUCCION() {
+      return djangoApiEndpoint('/api/bloquera/ordenes-produccion/')
+    },
+    get LOTES_PRODUCCION() {
+      return djangoApiEndpoint('/api/bloquera/lotes-produccion/')
+    },
   },
   PIEDRINERA: {
     get PRODUCTOS() {
@@ -103,10 +109,17 @@ export const API_ENDPOINTS = {
     get MOVIMIENTOS_INVENTARIO() {
       return djangoApiEndpoint('/api/piedrinera/movimientos-inventario/')
     },
+    get PRODUCCION() {
+      return djangoApiEndpoint('/api/piedrinera/produccion/')
+    },
+    PRODUCCION_STATS: djangoApiEndpoint('/api/piedrinera/produccion/stats/'),
   },
   PLANILLAS: {
     get EMPLEADOS() {
       return djangoApiEndpoint('/api/planillas/empleados/')
+    },
+    EMPLEADO(id: number | string) {
+      return djangoApiEndpoint(`/api/planillas/empleados/${id}/`)
     },
     get EMPLEADOS_STATS() {
       return djangoApiEndpoint('/api/planillas/empleados/stats/')
@@ -239,7 +252,7 @@ export const API_ENDPOINTS = {
       return djangoApiEndpoint(`/api/facturacion/facturas/${id}/`)
     },
     FACTURA_AGREGAR_PAGOS_MULTIPLES(id: number | string) {
-      return djangoApiEndpoint(`/api/facturacion/facturas/${id}/agregar-pagos-multiples/`)
+      return djangoApiEndpoint(`/api/facturacion/facturas/${id}/agregar_pagos_multiples/`)
     },
     FACTURA_ANULAR(id: number | string) {
       return djangoApiEndpoint(`/api/facturacion/facturas/${id}/anular/`)

@@ -188,6 +188,17 @@ export function AppSidebar() {
     item.items && pathname.includes(item.title.toLowerCase())
   )?.title || null
 
+  // Toggle del menú: si está abierto, cerrarlo; si está cerrado, abrirlo
+  const handleMenuToggle = (menuTitle: string) => {
+    // Si el menú ya está abierto, cerrarlo
+    if (openMenu === menuTitle) {
+      handleMenuClose()
+    } else {
+      // Si está cerrado o hay otro menú abierto, abrir este
+      handleMenuOpen(menuTitle)
+    }
+  }
+
   // Cuando se abre un menú, expandir el sidebar si está colapsado
   const handleMenuOpen = (menuTitle: string) => {
     if (state === "collapsed" && !isMobile) {
@@ -242,8 +253,7 @@ export function AppSidebar() {
   const currentOpenMenu = openMenu || (activeMenu && state === "expanded" ? activeMenu : null)
   const isMenuOpen = currentOpenMenu !== null
   
-  // Mostrar overlay solo cuando hay una sección seleccionada manualmente (no solo por ruta)
-  // El overlay aparece cuando el usuario ha seleccionado una sección
+  // Mostrar overlay cuando hay un menú abierto manualmente (no solo por ruta activa)
   const shouldShowOverlay = openMenu !== null && !isMobile
 
   return (
@@ -298,8 +308,10 @@ export function AppSidebar() {
                 const isActive = item.url ? pathname === item.url : pathname.startsWith(`/${item.title.toLowerCase()}`)
 
                 if (item.items) {
-                  // Determinar si este menú está abierto
-                  const isOpen = currentOpenMenu === item.title || (activeMenu === item.title && state === "expanded")
+                  // Determinar si este menú está abierto manualmente o por ruta activa
+                  const isManuallyOpen = openMenu === item.title
+                  const isActiveByRoute = activeMenu === item.title && state === "expanded" && !openMenu
+                  const isOpen = isManuallyOpen || isActiveByRoute
                   
                   return (
                     <Collapsible
@@ -308,18 +320,24 @@ export function AppSidebar() {
                       open={isOpen}
                       onOpenChange={(open) => {
                         if (open) {
-                          // Abrir el menú y expandir el sidebar si es necesario
+                          // Si se está abriendo, abrir el menú manualmente
                           handleMenuOpen(item.title)
                         } else {
-                          // Cerrar el menú y colapsar el sidebar si estaba colapsado originalmente
-                          handleMenuClose()
+                          // Si se está cerrando, cerrar el menú
+                          // Cerrar si está abierto manualmente o si es el mismo que está abierto
+                          if (isManuallyOpen || openMenu === item.title) {
+                            handleMenuClose()
+                          }
                         }
                       }}
                       className="group/collapsible min-w-0 max-w-full"
                     >
                       <SidebarMenuItem className="min-w-0 max-w-full">
                         <CollapsibleTrigger asChild>
-                          <SidebarMenuButton tooltip={item.title} className="min-w-0 max-w-full">
+                          <SidebarMenuButton 
+                            tooltip={item.title} 
+                            className="min-w-0 max-w-full"
+                          >
                             <item.icon className="shrink-0" />
                             <span className="truncate min-w-0">{item.title}</span>
                             <ChevronDown className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-180 shrink-0" />

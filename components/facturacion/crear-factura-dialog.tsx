@@ -225,8 +225,17 @@ export function CrearFacturaDialog({
       return
     }
 
-    const producto = productosDisponibles.find((p) => String(p.id) === productoSeleccionado)
-    if (!producto) return
+    // El productoSeleccionado ahora es "EMPRESA-ID", necesitamos parsearlo
+    const [empresa, id] = productoSeleccionado.split('-')
+    const producto = productosFiltrados.find((p) => p.empresa === empresa && String(p.id) === id)
+    if (!producto) {
+      toast({
+        title: "Error",
+        description: "Producto no encontrado",
+        variant: "destructive",
+      })
+      return
+    }
 
     if (cantidadProducto > producto.stock) {
       toast({
@@ -278,9 +287,11 @@ export function CrearFacturaDialog({
     setDetalles(detalles.filter((_, i) => i !== index))
   }
 
-  const handleProductoChange = (productoId: string) => {
-    setProductoSeleccionado(productoId)
-    const producto = productosDisponibles.find((p) => String(p.id) === productoId)
+  const handleProductoChange = (productoValue: string) => {
+    setProductoSeleccionado(productoValue)
+    // El valor ahora es "EMPRESA-ID", necesitamos parsearlo
+    const [empresa, id] = productoValue.split('-')
+    const producto = productosFiltrados.find((p) => p.empresa === empresa && String(p.id) === id)
     if (producto) {
       setPrecioProducto(producto.precioVenta)
     }
@@ -457,7 +468,7 @@ export function CrearFacturaDialog({
                     </SelectTrigger>
                     <SelectContent>
                       {productosFiltrados.map((producto) => (
-                        <SelectItem key={`${producto.empresa}-${producto.id}`} value={String(producto.id)}>
+                        <SelectItem key={`${producto.empresa}-${producto.id}`} value={`${producto.empresa}-${producto.id}`}>
                           <div className="flex flex-col">
                             <span>{producto.nombre}</span>
                             <span className="text-xs text-muted-foreground">
@@ -524,7 +535,7 @@ export function CrearFacturaDialog({
                   </TableHeader>
                   <TableBody>
                     {detalles.map((detalle, index) => (
-                      <TableRow key={index}>
+                      <TableRow key={`${detalle.producto_empresa}-${detalle.producto_id}-${index}`}>
                         <TableCell>
                           <div>
                             <div className="font-medium">{detalle.producto_nombre}</div>

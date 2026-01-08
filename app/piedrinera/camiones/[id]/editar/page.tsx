@@ -49,7 +49,11 @@ export default function EditarCamionPiedrineraPage({ params }: EditarCamionPiedr
     const loadCamion = async () => {
       try {
         setLoading(true)
-        const camion = await apiGet<any>(`${API_ENDPOINTS.PIEDRINERA.CAMIONES}/${id}`)
+        // Construir URL correctamente para evitar dobles slashes
+        const camionUrl = API_ENDPOINTS.PIEDRINERA.CAMIONES.endsWith('/')
+          ? `${API_ENDPOINTS.PIEDRINERA.CAMIONES}${id}/`
+          : `${API_ENDPOINTS.PIEDRINERA.CAMIONES}/${id}/`
+        const camion = await apiGet<any>(camionUrl)
 
         setPlaca(camion.placa || "")
         setMarca(camion.marca || "")
@@ -116,7 +120,11 @@ export default function EditarCamionPiedrineraPage({ params }: EditarCamionPiedr
         activo,
       }
 
-      await apiPut(`${API_ENDPOINTS.PIEDRINERA.CAMIONES}/${id}`, updatedCamion)
+      // Construir URL correctamente para evitar dobles slashes
+      const camionUrl = API_ENDPOINTS.PIEDRINERA.CAMIONES.endsWith('/')
+        ? `${API_ENDPOINTS.PIEDRINERA.CAMIONES}${id}/`
+        : `${API_ENDPOINTS.PIEDRINERA.CAMIONES}/${id}/`
+      await apiPut(camionUrl, updatedCamion)
 
       toast({
         title: "Camión Actualizado",

@@ -409,7 +409,12 @@ export default function ClientesFerreteriaPage() {
 
     setIsDeleting(true)
     try {
-      await apiDelete(`${API_ENDPOINTS.FERRETERIA.CLIENTES}/${selectedCliente.id}`)
+      // Construir URL correctamente removiendo el slash final si existe
+      const clienteUrl = API_ENDPOINTS.FERRETERIA.CLIENTES.endsWith('/') 
+        ? `${API_ENDPOINTS.FERRETERIA.CLIENTES}${selectedCliente.id}/`
+        : `${API_ENDPOINTS.FERRETERIA.CLIENTES}/${selectedCliente.id}/`
+      
+      await apiDelete(clienteUrl)
 
       toast({
         title: "Cliente Eliminado",

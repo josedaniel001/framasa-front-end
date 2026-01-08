@@ -43,7 +43,12 @@ export default function EditarClientePage({ params }: EditarClientePageProps) {
     const loadCliente = async () => {
       try {
         setLoading(true)
-        const clienteRaw = await apiGet<any>(`${API_ENDPOINTS.FERRETERIA.CLIENTES}/${id}`)
+        // Construir URL correctamente removiendo el slash final si existe
+        const clienteUrl = API_ENDPOINTS.FERRETERIA.CLIENTES.endsWith('/') 
+          ? `${API_ENDPOINTS.FERRETERIA.CLIENTES}${id}/`
+          : `${API_ENDPOINTS.FERRETERIA.CLIENTES}/${id}/`
+        
+        const clienteRaw = await apiGet<any>(clienteUrl)
         
         // Mapear datos del backend (snake_case) al formato del frontend
         const clienteData: ClienteFerreteria = {
@@ -119,7 +124,12 @@ export default function EditarClientePage({ params }: EditarClientePageProps) {
         limite_credito: permiteFiado ? limiteCredito : 0,
       }
 
-      await apiPut(`${API_ENDPOINTS.FERRETERIA.CLIENTES}/${id}`, clienteData)
+      // Construir URL correctamente removiendo el slash final si existe
+      const clienteUrl = API_ENDPOINTS.FERRETERIA.CLIENTES.endsWith('/') 
+        ? `${API_ENDPOINTS.FERRETERIA.CLIENTES}${id}/`
+        : `${API_ENDPOINTS.FERRETERIA.CLIENTES}/${id}/`
+      
+      await apiPut(clienteUrl, clienteData)
 
       toast({
         title: "Cliente Actualizado",

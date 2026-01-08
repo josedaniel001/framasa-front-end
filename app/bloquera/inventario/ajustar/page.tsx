@@ -171,18 +171,48 @@ export default function AjustarInventarioBloqueraPage() {
       setSubmitting(true)
 
       // Preparar datos para enviar a la API según documentación
-      const movimientoData: any = {
-        producto: Number(itemSeleccionadoData.id), // El backend espera 'producto' no 'producto_id'
-        usuario: usuario.id,
-        tipo: tipoMovimiento,
-        cantidad: cantidadAjuste, // Para AJUSTE, puede ser positiva o negativa
-        motivo: motivo.trim(),
+      // Nota: El usuario se asigna automáticamente en Django desde el token, no se envía
+      const productoId = Number(itemSeleccionadoData.id)
+      
+      if (isNaN(productoId) || productoId <= 0) {
+        toast({
+          title: "Error de validación",
+          description: "El ID del producto no es válido.",
+          variant: "destructive",
+        })
+        return
       }
 
-      // Agregar observaciones solo si tiene contenido
-      if (observaciones.trim()) {
-        movimientoData.observaciones = observaciones.trim()
+      // Preparar datos para enviar
+      const movimientoData: any = {
+        producto: productoId, // El backend espera 'producto' (ID del producto como número)
+        tipo: tipoMovimiento,
+        cantidad: Number(cantidadAjuste), // Asegurar que sea número
       }
+
+      // Motivo: enviar solo si tiene contenido, de lo contrario null
+      const motivoTrimmed = motivo.trim()
+      if (motivoTrimmed) {
+        movimientoData.motivo = motivoTrimmed
+      } else {
+        movimientoData.motivo = null
+      }
+
+      // Observaciones: enviar solo si tiene contenido, de lo contrario null
+      if (observaciones && observaciones.trim()) {
+        movimientoData.observaciones = observaciones.trim()
+      } else {
+        movimientoData.observaciones = null
+      }
+
+      // Log para debugging
+      console.log('[AJUSTAR INVENTARIO] Datos a enviar:', {
+        movimientoData,
+        productoId,
+        tipoMovimiento,
+        cantidadAjuste,
+        motivo: motivoTrimmed,
+      })
 
       await apiPost(API_ENDPOINTS.BLOQUERA.MOVIMIENTOS_INVENTARIO, movimientoData)
 
@@ -204,9 +234,45 @@ export default function AjustarInventarioBloqueraPage() {
       }, 1500)
     } catch (error: any) {
       console.error('Error al ajustar inventario:', error)
+      console.error('Error completo:', {
+        message: error.message,
+        status: error.status,
+        response: error.response,
+        errorData: error.response?.data,
+      })
+      
+      // Extraer mensaje de error más detallado
+      let errorMessage = error.message || "No se pudo realizar el ajuste de inventario. Por favor, intenta de nuevo."
+      
+      if (error.response?.data) {
+        const errorData = error.response.data
+        // Intentar obtener mensaje específico de Django
+        if (errorData.cantidad && Array.isArray(errorData.cantidad)) {
+          errorMessage = errorData.cantidad.join(', ')
+        } else if (errorData.producto && Array.isArray(errorData.producto)) {
+          errorMessage = errorData.producto.join(', ')
+        } else if (errorData.tipo && Array.isArray(errorData.tipo)) {
+          errorMessage = errorData.tipo.join(', ')
+        } else if (errorData.motivo && Array.isArray(errorData.motivo)) {
+          errorMessage = errorData.motivo.join(', ')
+        } else if (typeof errorData === 'object') {
+          // Mostrar todos los errores de validación
+          const errors = Object.entries(errorData)
+            .map(([field, messages]: [string, any]) => {
+              const fieldName = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+              const messagesText = Array.isArray(messages) ? messages.join(', ') : String(messages)
+              return `${fieldName}: ${messagesText}`
+            })
+            .join('; ')
+          if (errors) {
+            errorMessage = errors
+          }
+        }
+      }
+      
       toast({
         title: "Error",
-        description: error.message || "No se pudo realizar el ajuste de inventario. Por favor, intenta de nuevo.",
+        description: errorMessage,
         variant: "destructive",
       })
     } finally {

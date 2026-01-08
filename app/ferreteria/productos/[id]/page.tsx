@@ -47,7 +47,11 @@ export default function VerProductoPage({ params }: VerProductoPageProps) {
     const loadProducto = async () => {
       try {
         setLoading(true)
-        const productoRaw = await apiGet<any>(`${API_ENDPOINTS.FERRETERIA.PRODUCTOS}/${id}`)
+        // Construir URL correctamente removiendo el slash final si existe
+        const productosUrl = API_ENDPOINTS.FERRETERIA.PRODUCTOS.endsWith('/') 
+          ? `${API_ENDPOINTS.FERRETERIA.PRODUCTOS}${id}/`
+          : `${API_ENDPOINTS.FERRETERIA.PRODUCTOS}/${id}/`
+        const productoRaw = await apiGet<any>(productosUrl)
         
         // Mapear datos del backend (snake_case) al formato del frontend (camelCase)
         const productoData: ProductoFerreteria = {

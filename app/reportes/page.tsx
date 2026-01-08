@@ -28,8 +28,6 @@ interface InventarioUnificado {
     total_productos: number
     productos_activos: number
     productos_inactivos: number
-    stock_total: number
-    stock_minimo_total: number
     productos_stock_bajo: number
     valor_inventario_estimado: number
     unidades: string
@@ -54,19 +52,19 @@ interface TopProducto {
 }
 
 interface EstadisticaPredictiva {
-  empresa: string
   producto_id: number
   producto_codigo: string
   producto_nombre: string
-  stock_actual: number
-  stock_minimo: number
-  promedio_ventas_diarias: number | null
-  promedio_ventas_semanales: number | null
-  promedio_ventas_mensuales: number | null
-  dias_restantes_estimados: number | null
-  necesita_reposicion: boolean
-  tendencia: "creciente" | "decreciente" | "estable" | null
-  unidades: string
+  empresa: string
+  periodo: number
+  ventas_q: number
+  prom_diario_q: number
+  tendencia_porcentaje: number
+  proyeccion_30d_q: number
+  stock_actual: number | null
+  dias_stock: number | null
+  riesgo_stock: "Alto" | "Medio" | "Bajo" | "Sin datos" | null
+  recomendacion: string
 }
 
 export default function ReportesPage() {
@@ -88,8 +86,8 @@ export default function ReportesPage() {
 
   // Estados para Estadísticas Predictivas
   const [estadisticas, setEstadisticas] = useState<EstadisticaPredictiva[]>([])
-  const [filtroEmpresaStats, setFiltroEmpresaStats] = useState("todas")
   const [diasAnalisis, setDiasAnalisis] = useState("30")
+  const [filtroEmpresaStats, setFiltroEmpresaStats] = useState("todas")
   const [loadingStats, setLoadingStats] = useState(false)
 
   // Cargar inventario unificado al montar
@@ -160,8 +158,10 @@ export default function ReportesPage() {
     try {
       setLoadingStats(true)
       const params = new URLSearchParams()
-      params.append("empresa", filtroEmpresaStats)
       params.append("dias_analisis", diasAnalisis)
+      if (filtroEmpresaStats !== "todas") {
+        params.append("empresa", filtroEmpresaStats)
+      }
 
       const url = `${API_ENDPOINTS.REPORTES.ESTADISTICAS_PREDICTIVAS}?${params.toString()}`
       const data = await apiGet<EstadisticaPredictiva[]>(url)
@@ -206,7 +206,7 @@ export default function ReportesPage() {
         ["Valor Total Inventario", `Q ${inventarioUnificado.resumen_general.valor_inventario_total.toFixed(2)}`],
         [""],
         ["DESGLOSE POR EMPRESA"],
-        ["Empresa", "Total Productos", "Activos", "Stock Total", "Stock Mínimo", "Stock Bajo", "Valor Inventario"],
+        ["Empresa", "Total Productos", "Activos", "Inactivos", "Stock Bajo", "Valor Inventario"],
       ])
 
       inventarioUnificado.por_empresa.forEach((emp) => {
@@ -214,8 +214,7 @@ export default function ReportesPage() {
           emp.empresa,
           emp.total_productos,
           emp.productos_activos,
-          `${emp.stock_total} ${emp.unidades}`,
-          `${emp.stock_minimo_total} ${emp.unidades}`,
+          emp.productos_inactivos,
           emp.productos_stock_bajo,
           `Q ${emp.valor_inventario_estimado.toFixed(2)}`,
         ])
@@ -318,25 +317,26 @@ export default function ReportesPage() {
       worksheet.addRows([
         ["REPORTE DE ESTADÍSTICAS PREDICTIVAS"],
         ["Fecha de Generación", new Date().toLocaleDateString("es-GT")],
-        ["Empresa", filtroEmpresaStats === "todas" ? "Todas" : filtroEmpresaStats],
+        ["Empresa", filtroEmpresaStats === "todas" ? "Todas" : filtroEmpresaStats.charAt(0).toUpperCase() + filtroEmpresaStats.slice(1)],
         ["Días de Análisis", diasAnalisis],
         [""],
-        ["Producto", "Código", "Empresa", "Stock Actual", "Stock Mínimo", "Promedio Diario", "Días Restantes", "Tendencia", "Estado"],
+        ["Producto", "Código", "Empresa", "Período", "Ventas (Q)", "Prom. diario (Q)", "Tendencia %", "Proyección 30d (Q)", "Stock actual", "Días stock", "Riesgo stock", "Recomendación"],
       ])
 
       estadisticas.forEach((stat) => {
         worksheet.addRow([
           stat.producto_nombre,
           stat.producto_codigo,
-          stat.empresa,
-          `${stat.stock_actual} ${stat.unidades}`,
-          `${stat.stock_minimo} ${stat.unidades}`,
-          stat.promedio_ventas_diarias !== null
-            ? `${stat.promedio_ventas_diarias.toFixed(2)} ${stat.unidades}/día`
-            : "Sin datos",
-          stat.dias_restantes_estimados !== null ? `${stat.dias_restantes_estimados} días` : "N/A",
-          stat.tendencia || "Sin datos",
-          stat.necesita_reposicion ? "Reposición" : "Normal",
+          stat.empresa.charAt(0).toUpperCase() + stat.empresa.slice(1),
+          `${stat.periodo} días`,
+          stat.ventas_q.toFixed(2),
+          stat.prom_diario_q.toFixed(2),
+          `${stat.tendencia_porcentaje > 0 ? "+" : ""}${stat.tendencia_porcentaje.toFixed(1)}%`,
+          stat.proyeccion_30d_q.toFixed(2),
+          stat.stock_actual !== null ? stat.stock_actual.toFixed(0) : "—",
+          stat.dias_stock !== null ? `${stat.dias_stock} días` : "—",
+          stat.riesgo_stock || "—",
+          stat.recomendacion,
         ])
       })
 
@@ -540,8 +540,7 @@ export default function ReportesPage() {
                         <TableHead>Empresa</TableHead>
                         <TableHead>Total Productos</TableHead>
                         <TableHead>Activos</TableHead>
-                        <TableHead>Stock Total</TableHead>
-                        <TableHead>Stock Mínimo</TableHead>
+                        <TableHead>Inactivos</TableHead>
                         <TableHead>Stock Bajo</TableHead>
                         <TableHead className="text-right">Valor Inventario</TableHead>
                       </TableRow>
@@ -553,10 +552,9 @@ export default function ReportesPage() {
                           <TableCell>{empresa.total_productos}</TableCell>
                           <TableCell>{empresa.productos_activos}</TableCell>
                           <TableCell>
-                            {formatNumber(empresa.stock_total, empresa.unidades === "m³" ? 2 : 0)} {empresa.unidades}
-                          </TableCell>
-                          <TableCell>
-                            {formatNumber(empresa.stock_minimo_total, empresa.unidades === "m³" ? 2 : 0)} {empresa.unidades}
+                            <Badge variant={empresa.productos_inactivos > 0 ? "secondary" : "outline"}>
+                              {empresa.productos_inactivos}
+                            </Badge>
                           </TableCell>
                           <TableCell>
                             <Badge variant={empresa.productos_stock_bajo > 0 ? "destructive" : "secondary"}>
@@ -720,7 +718,7 @@ export default function ReportesPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todas">Todas</SelectItem>
+                      <SelectItem value="todas">Todas las empresas</SelectItem>
                       <SelectItem value="ferreteria">Ferretería</SelectItem>
                       <SelectItem value="bloquera">Bloquera</SelectItem>
                       <SelectItem value="piedrinera">Piedrinera</SelectItem>
@@ -764,56 +762,69 @@ export default function ReportesPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Producto</TableHead>
+                        <TableHead>Código</TableHead>
                         <TableHead>Empresa</TableHead>
-                        <TableHead>Stock Actual</TableHead>
-                        <TableHead>Stock Mínimo</TableHead>
-                        <TableHead>Promedio Diario</TableHead>
-                        <TableHead>Días Restantes</TableHead>
-                        <TableHead>Tendencia</TableHead>
-                        <TableHead>Estado</TableHead>
+                        <TableHead>Período</TableHead>
+                        <TableHead className="text-right">Ventas (Q)</TableHead>
+                        <TableHead className="text-right">Prom. diario (Q)</TableHead>
+                        <TableHead className="text-right">Tendencia %</TableHead>
+                        <TableHead className="text-right">Proyección 30d (Q)</TableHead>
+                        <TableHead className="text-right">Stock actual</TableHead>
+                        <TableHead className="text-right">Días stock</TableHead>
+                        <TableHead>Riesgo stock</TableHead>
+                        <TableHead>Recomendación</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {estadisticas.map((stat) => (
                         <TableRow key={`${stat.empresa}-${stat.producto_id}`}>
+                          <TableCell className="font-medium">{stat.producto_nombre}</TableCell>
+                          <TableCell className="text-muted-foreground">{stat.producto_codigo}</TableCell>
                           <TableCell>
-                            <div>
-                              <div className="font-medium">{stat.producto_nombre}</div>
-                              <div className="text-sm text-muted-foreground">{stat.producto_codigo}</div>
-                            </div>
+                            {getEmpresaBadge(stat.empresa)}
                           </TableCell>
-                          <TableCell>{getEmpresaBadge(stat.empresa)}</TableCell>
-                          <TableCell>
-                            {formatNumber(stat.stock_actual, stat.unidades === "m³" ? 2 : 0)} {stat.unidades}
+                          <TableCell>{stat.periodo} días</TableCell>
+                          <TableCell className="text-right">
+                            Q {formatNumber(stat.ventas_q)}
                           </TableCell>
-                          <TableCell>
-                            {formatNumber(stat.stock_minimo, stat.unidades === "m³" ? 2 : 0)} {stat.unidades}
+                          <TableCell className="text-right">
+                            Q {formatNumber(stat.prom_diario_q)}
                           </TableCell>
-                          <TableCell>
-                            {stat.promedio_ventas_diarias !== null
-                              ? `${formatNumber(stat.promedio_ventas_diarias, stat.unidades === "m³" ? 2 : 0)} ${stat.unidades}/día`
-                              : "Sin datos"}
+                          <TableCell className="text-right">
+                            <Badge variant={stat.tendencia_porcentaje > 0 ? "default" : stat.tendencia_porcentaje < 0 ? "destructive" : "secondary"}>
+                              {stat.tendencia_porcentaje > 0 ? "+" : ""}{stat.tendencia_porcentaje}%
+                            </Badge>
                           </TableCell>
-                          <TableCell>
-                            {stat.dias_restantes_estimados !== null ? (
-                              <Badge variant={stat.dias_restantes_estimados < 7 ? "destructive" : "secondary"}>
-                                {stat.dias_restantes_estimados} días
+                          <TableCell className="text-right">
+                            Q {formatNumber(stat.proyeccion_30d_q)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {stat.stock_actual !== null ? formatNumber(stat.stock_actual, 0) : "—"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {stat.dias_stock !== null ? (
+                              <Badge variant={stat.dias_stock < 10 ? "destructive" : stat.dias_stock <= 30 ? "default" : "secondary"}>
+                                {stat.dias_stock} días
                               </Badge>
                             ) : (
-                              "N/A"
+                              "—"
                             )}
                           </TableCell>
-                          <TableCell>{getTendenciaBadge(stat.tendencia)}</TableCell>
                           <TableCell>
-                            {stat.necesita_reposicion ? (
-                              <Badge variant="destructive">
-                                <AlertTriangle className="h-3 w-3 mr-1" />
-                                Reposición
+                            {stat.riesgo_stock && (
+                              <Badge 
+                                variant={
+                                  stat.riesgo_stock === "Alto" ? "destructive" : 
+                                  stat.riesgo_stock === "Medio" ? "default" : 
+                                  stat.riesgo_stock === "Bajo" ? "secondary" : 
+                                  "outline"
+                                }
+                              >
+                                {stat.riesgo_stock}
                               </Badge>
-                            ) : (
-                              <Badge variant="secondary">Normal</Badge>
                             )}
                           </TableCell>
+                          <TableCell className="text-sm">{stat.recomendacion}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

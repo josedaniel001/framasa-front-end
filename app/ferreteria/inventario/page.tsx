@@ -101,8 +101,10 @@ export default function InventarioFerreteriaPage() {
         if (filters.fechaHasta) {
           movParams.append('fecha_hasta', filters.fechaHasta)
         }
-        movParams.append('page', movimientosPage.toString())
-        const movimientosUrl = `${API_ENDPOINTS.FERRETERIA.MOVIMIENTOS_INVENTARIO}?${movParams.toString()}`
+        // Nota: La paginación se hace en el frontend, no en el backend
+        const movimientosUrl = movParams.toString() 
+          ? `${API_ENDPOINTS.FERRETERIA.MOVIMIENTOS_INVENTARIO}?${movParams.toString()}`
+          : API_ENDPOINTS.FERRETERIA.MOVIMIENTOS_INVENTARIO
 
         // Cargar productos y movimientos en paralelo
         const [productosResult, movimientosResult] = await Promise.allSettled([

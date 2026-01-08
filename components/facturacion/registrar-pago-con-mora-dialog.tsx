@@ -109,9 +109,9 @@ export function RegistrarPagoConMoraDialog({
   const loadCliente = async () => {
     try {
       setLoadingCliente(true)
-      const data = await apiGet<any>(API_ENDPOINTS.FERRETERIA.CLIENTES)
-      const clientesData = Array.isArray(data) ? data : data?.results || data?.data || []
-      const clienteData = clientesData.find((c: any) => c.id === factura.cliente_id)
+      // Obtener cliente directamente por ID desde Django
+      const clienteUrl = `${API_ENDPOINTS.FERRETERIA.CLIENTES}${factura.cliente_id}/`
+      const clienteData = await apiGet<any>(clienteUrl)
       if (clienteData) {
         setCliente({
           id: clienteData.id,

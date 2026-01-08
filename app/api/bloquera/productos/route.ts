@@ -95,6 +95,11 @@ export async function POST(request: NextRequest) {
       tipo_bloque: body.tipoBloque || body.tipo_bloque,
       dimensiones: body.dimensiones || null,
       precio_unitario: body.precioVentaUnitario || body.precio_unitario,
+      precio_descuento: body.precioDescuento !== undefined && body.precioDescuento !== null && body.precioDescuento !== '' 
+        ? body.precioDescuento 
+        : (body.precio_descuento !== undefined && body.precio_descuento !== null && body.precio_descuento !== '' 
+          ? body.precio_descuento 
+          : null),
       costo_produccion: body.costoProduccionUnitario || body.costo_produccion,
       stock_actual: body.stockActual || body.stock_actual || 0,
       stock_minimo: body.stockMinimo || body.stock_minimo || 0,
@@ -112,7 +117,22 @@ export async function POST(request: NextRequest) {
     })
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
+      const errorText = await response.text()
+      let errorData: any = {}
+      try {
+        errorData = JSON.parse(errorText)
+      } catch {
+        errorData = { error: errorText || `Error ${response.status}: ${response.statusText}` }
+      }
+      
+      // Log para debugging
+      console.error('[BLOQUERA API] Error de Django:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorData,
+        djangoBody,
+      })
+      
       return NextResponse.json(
         errorData || { error: 'Error al crear producto' },
         { status: response.status }

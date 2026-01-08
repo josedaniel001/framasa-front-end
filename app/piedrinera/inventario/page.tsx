@@ -53,6 +53,7 @@ interface ProductoPiedrinera {
   tipo: string
   granulometria?: string
   precioVenta: number
+  costoProduccion: number
   stock: number
   stockMinimo: number
   activo: boolean
@@ -113,8 +114,10 @@ export default function InventarioPiedrineraPage() {
         if (filters.fechaHasta) {
           movParams.append('fecha_hasta', filters.fechaHasta)
         }
-        movParams.append('page', movimientosPage.toString())
-        const movimientosUrl = `${API_ENDPOINTS.PIEDRINERA.MOVIMIENTOS_INVENTARIO}?${movParams.toString()}`
+        // La paginación se hace en el frontend, no enviamos 'page' al backend
+        const movimientosUrl = movParams.toString() 
+          ? `${API_ENDPOINTS.PIEDRINERA.MOVIMIENTOS_INVENTARIO}?${movParams.toString()}`
+          : API_ENDPOINTS.PIEDRINERA.MOVIMIENTOS_INVENTARIO
 
         const [productosResult, statsResult, movimientosResult] = await Promise.allSettled([
           apiGet<any>(productosUrl),
@@ -146,22 +149,57 @@ export default function InventarioPiedrineraPage() {
           throw productosResult.reason
         }
 
-        const mappedProductos = productosData.map((producto: any) => ({
-          id: String(producto.id ?? producto.pk ?? ""),
-          codigo: producto.codigo ?? "",
-          nombre: producto.nombre ?? "",
-          descripcion: producto.descripcion ?? null,
-          tipo: producto.tipo ?? "",
-          granulometria: producto.granulometria ?? null,
-          precioVenta: producto.precioVenta ?? producto.precio_venta ?? 0,
-          stock: producto.stock ?? producto.stock_actual ?? 0,
-          stockMinimo: producto.stockMinimo ?? producto.stock_minimo ?? 0,
-          activo: producto.activo !== undefined ? producto.activo : true,
-          ubicacion: producto.ubicacion ?? null,
-          calidad: producto.calidad ?? null,
-          proveedor: producto.proveedor ?? null,
-          ultimaActualizacion: producto.updated_at ?? producto.ultimaActualizacion ?? producto.fecha_actualizacion ?? producto.created_at ?? null,
-        }))
+        const mappedProductos = productosData.map((producto: any) => {
+          // Debug: Log para ver qué campos tiene el producto
+          if (productosData.length > 0 && productosData.indexOf(producto) === 0) {
+            console.log('🔍 [Inventario Piedrinera] Primer producto de la API:', producto)
+          }
+          
+          // Mapear costo de producción - el serializer puede devolverlo en diferentes formatos
+          const costoProduccionValue = producto.costo_produccion_m3 ?? 
+                                      producto.costoProduccionPorMetroCubico ?? 
+                                      producto.costoProduccion ?? 
+                                      0
+          
+          // Mapear stock - el serializer puede devolverlo en diferentes formatos
+          const stockValue = producto.stock_actual_m3 ?? 
+                            producto.stockActualMetrosCubicos ?? 
+                            producto.stock ?? 
+                            producto.stock_actual ?? 
+                            0
+          
+          return {
+            id: String(producto.id ?? producto.pk ?? ""),
+            codigo: producto.codigo ?? "",
+            nombre: producto.nombre ?? "",
+            descripcion: producto.descripcion ?? null,
+            tipo: producto.tipo ?? "",
+            granulometria: producto.granulometria ?? null,
+            precioVenta: producto.precioVenta ?? producto.precio_venta_m3 ?? producto.precioVentaPorMetroCubico ?? 0,
+            costoProduccion: Number(costoProduccionValue) || 0,
+            stock: Number(stockValue) || 0,
+            stockMinimo: Number(producto.stock_minimo_m3 ?? 
+                      producto.stockMinimoMetrosCubicos ?? 
+                      producto.stockMinimo ?? 
+                      producto.stock_minimo ?? 
+                      0) || 0,
+            activo: producto.activo !== undefined ? producto.activo : true,
+            ubicacion: producto.ubicacion ?? null,
+            calidad: producto.calidad ?? null,
+            proveedor: producto.proveedor ?? null,
+            ultimaActualizacion: producto.updated_at ?? producto.ultimaActualizacion ?? producto.fecha_actualizacion ?? producto.created_at ?? null,
+          }
+        })
+        
+        // Debug: Log del cálculo del valor total
+        const valorCalculado = mappedProductos.reduce((sum, p) => {
+          const valorProducto = (Number(p.stock) || 0) * (Number(p.costoProduccion) || 0)
+          if (valorProducto > 0) {
+            console.log(`🔍 [Inventario Piedrinera] Producto ${p.nombre}: stock=${p.stock}, costo=${p.costoProduccion}, valor=${valorProducto}`)
+          }
+          return sum + valorProducto
+        }, 0)
+        console.log('🔍 [Inventario Piedrinera] Valor total calculado:', valorCalculado)
 
         let statsData: ProductosStats | null = null
         if (statsResult.status === "fulfilled" && statsResult.value) {
@@ -224,7 +262,7 @@ export default function InventarioPiedrineraPage() {
         }
       }
     },
-    [filters.tipoMovimiento, filters.fechaDesde, filters.fechaHasta, movimientosPage]
+    [filters.tipoMovimiento, filters.fechaDesde, filters.fechaHasta]
   )
 
   useEffect(() => {
@@ -354,14 +392,15 @@ export default function InventarioPiedrineraPage() {
   const endIndex = startIndex + ITEMS_PER_PAGE
   const paginatedProductos = filteredProductos.slice(startIndex, endIndex)
 
-  const totalArticulos = stats?.total_productos ?? productos.length
-  const agregadosActivos = stats?.productos_activos ?? productos.filter((p) => p.activo).length
-  const stockBajo = stats?.productos_stock_bajo ?? productos.filter((p) => p.stock <= (p.stockMinimo || 0)).length
+  const totalArticulos = stats?.total_productos ?? stats?.total_agregados ?? productos.length
+  const agregadosActivos = stats?.productos_activos ?? stats?.agregados_activos ?? productos.filter((p) => p.activo).length
+  const stockBajo = stats?.productos_stock_bajo ?? stats?.agregados_stock_bajo ?? productos.filter((p) => p.stock <= (p.stockMinimo || 0)).length
   const stockTotalMetrosCubicos =
     stats?.stock_total_metros_cubicos ?? productos.reduce((sum, p) => sum + (p.stock || 0), 0)
+  // Valor inventario = suma de (stock_actual_m3 * costo_produccion_m3) para cada producto
   const valorTotalInventario =
     stats?.valor_total ??
-    productos.reduce((sum, p) => sum + (p.stock || 0) * (p.precioVenta || 0), 0)
+    productos.reduce((sum, p) => sum + (Number(p.stock) || 0) * (Number(p.costoProduccion) || 0), 0)
 
   if (loading) {
     return (
@@ -640,11 +679,11 @@ export default function InventarioPiedrineraPage() {
                             <Edit className="h-4 w-4" />
                           </Button>
                         </Link>
-                        <Link href={`/piedrinera/inventario/ajustar`}>
-                      <Button variant="outline" size="sm">
-                        Ajustar
-                      </Button>
-                    </Link>
+                        <Link href={`/piedrinera/inventario/${producto.id}/ajustar`}>
+                          <Button variant="outline" size="sm">
+                            Ajustar
+                          </Button>
+                        </Link>
                       </div>
                   </TableCell>
                 </TableRow>

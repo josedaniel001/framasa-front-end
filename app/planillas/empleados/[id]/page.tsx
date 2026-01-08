@@ -54,7 +54,7 @@ export default function VerEmpleadoPage({ params }: VerEmpleadoPageProps) {
     const loadEmpleado = async () => {
       try {
         setLoading(true)
-        const empleadoData = await apiGet<Empleado>(`${API_ENDPOINTS.PLANILLAS.EMPLEADOS}/${id}`)
+        const empleadoData = await apiGet<Empleado>(API_ENDPOINTS.PLANILLAS.EMPLEADO(id))
         setEmpleado(empleadoData)
       } catch (error: any) {
         console.error('Error al cargar empleado:', error)

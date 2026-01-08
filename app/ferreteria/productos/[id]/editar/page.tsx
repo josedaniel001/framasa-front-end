@@ -95,8 +95,13 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
     const loadData = async () => {
       try {
         setLoading(true)
+        // Construir URL correctamente removiendo el slash final si existe
+        const productoUrl = API_ENDPOINTS.FERRETERIA.PRODUCTOS.endsWith('/') 
+          ? `${API_ENDPOINTS.FERRETERIA.PRODUCTOS}${id}/`
+          : `${API_ENDPOINTS.FERRETERIA.PRODUCTOS}/${id}/`
+        
         const [productoData, categoriasData, unidadesData] = await Promise.all([
-          apiGet<Producto>(`${API_ENDPOINTS.FERRETERIA.PRODUCTOS}/${id}`),
+          apiGet<Producto>(productoUrl),
           apiGet<Categoria[]>(API_ENDPOINTS.FERRETERIA.CATEGORIAS),
           apiGet<UnidadMedida[]>(API_ENDPOINTS.FERRETERIA.UNIDADES_MEDIDA),
         ])
@@ -186,7 +191,12 @@ export default function EditarProductoPage({ params }: EditarProductoPageProps) 
         activo,
       }
 
-      await apiPut(`${API_ENDPOINTS.FERRETERIA.PRODUCTOS}/${id}`, productoData)
+      // Construir URL correctamente removiendo el slash final si existe
+      const productoUrl = API_ENDPOINTS.FERRETERIA.PRODUCTOS.endsWith('/') 
+        ? `${API_ENDPOINTS.FERRETERIA.PRODUCTOS}${id}/`
+        : `${API_ENDPOINTS.FERRETERIA.PRODUCTOS}/${id}/`
+      
+      await apiPut(productoUrl, productoData)
 
       toast({
         title: "Producto Actualizado",
